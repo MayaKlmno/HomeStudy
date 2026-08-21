@@ -91,6 +91,10 @@ HS.keyboard = (function () {
     }
     if (opts.typing !== false) document.addEventListener('keydown', onKeyDown);
 
+    // Give the board a natural width so one octave fits a phone screen and wider
+    // ranges scroll instead of squashing.
+    board.style.minWidth = Math.round(wCount * 40) + 'px';
+
     var wrap = el('div.piano-wrap', {}, [board]);
     return {
       el: wrap,

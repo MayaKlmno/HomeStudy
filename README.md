@@ -7,26 +7,71 @@ A Duolingo-style learning app you can open in a browser. Two tracks, 100 levels 
 - **Piano** — note reading, rhythm, intervals, chords, ear training and real pieces, played on an
   on-screen keyboard.
 
-## Run it
+No installation, no build step, no accounts, no internet needed. Progress is saved in the browser.
 
-No installation, no build step, no internet needed.
+## Run it
 
 ```bash
 open index.html
 ```
 
-Or drag `index.html` onto your browser. Progress is saved in the browser itself.
+Or drag `index.html` onto your browser. If your browser blocks local files from loading scripts,
+serve the folder instead:
 
-Chrome or Safari on a Mac both work. For the French listening exercises your system needs a French
-voice installed (macOS: System Settings → Accessibility → Spoken Content → System Voice → Manage
-Voices → French).
+```bash
+python3 -m http.server 8765
+```
 
-## What's here
+then open http://localhost:8765.
 
-- `PLAN.md` — the full project plan: curriculum, exercise types, build order
-- `content/french/SOURCES.md` — the public-domain texts the French course draws on
-- `index.html`, `styles/`, `js/` — the app
+For the French listening exercises your system needs a French voice installed (macOS: System
+Settings → Accessibility → Spoken Content → System Voice → Manage Voices → French). Without one the
+app shows the text instead, so nothing breaks.
+
+## How it works
+
+Pick a track, then work down the path. Each level is 6–11 exercises. You get five hearts per
+lesson; a wrong answer costs one and the question comes back before the end. Finishing a level
+earns XP, up to three stars, and unlocks the next one. Mistakes collect in a practice pool you can
+drill from the home screen.
+
+**French exercises** — translate both ways, tap-the-words sentence building, listen and choose,
+type what you hear, fill in the blank, match pairs, and a reading passage with comprehension
+questions closing every unit.
+
+**Piano exercises** — find the key, name the note on the staff, play what you hear, identify
+intervals and chords by ear, tap rhythms, sight-read phrases, echo melodies, and play whole pieces.
+Sound is synthesised with the Web Audio API and the notation is drawn as SVG, so there is nothing
+to download.
+
+## Layout
+
+```
+index.html            the whole app
+styles/               base, layout, components, lesson
+js/
+  util.js             DOM helpers, seeded RNG, text normalising
+  storage.js          progress in localStorage
+  engine.js           lesson session: queue, hearts, XP, results
+  exercises.js        every exercise renderer
+  speech.js           French text-to-speech
+  audio.js            note maths + Web Audio piano
+  staff.js            SVG music notation
+  keyboard.js         on-screen piano keyboard
+  screens.js          home, track path, practice, settings
+  app.js              hash router
+  tracks/french/      vocabulary, passages, level generator
+  tracks/piano/       curriculum, pieces, level generator
+content/french/SOURCES.md   the public-domain texts the course draws on
+PLAN.md               the full project plan
+```
+
+Levels are generated from the curriculum data with a seeded random number generator, so level 37 is
+always the same lesson — but the whole 200-level course is a few hundred lines of content rather
+than thousands of hand-written screens.
 
 ## Status
 
-In progress. See `PLAN.md` for what's built and what's next.
+Both tracks are complete and playable: 200 levels, 1,668 exercises. Ideas still open —
+handwriting-free French accents on mobile, a two-handed grand-staff mode for piano, and per-unit
+progress badges.
