@@ -77,11 +77,11 @@ HS.tracks.piano = (function () {
     var ex = [];
     var notes = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
     var focus = notes.slice(0, Math.min(notes.length, 3 + i));
-    for (var k = 0; k < 3; k++) {
-      ex.push({ type: 'keypress', ask: 'name', note: U.pick(focus, rand),
+    U.shuffle(focus, rand).slice(0, 3).forEach(function (nt) {
+      ex.push({ type: 'keypress', ask: 'name', note: nt,
                 from: 'C4', to: 'C5', labels: i < 3 ? 'letters' : 'none',
                 prompt: 'Find the key' });
-    }
+    });
     ex.push(theory('How many black keys are in the group next to C and D?', 'Two',
       ['Three', 'One', 'Five'], rand));
     ex.push({ type: 'keypress', ask: 'ear', note: U.pick(focus, rand), from: 'C4', to: 'C5',
@@ -103,12 +103,11 @@ HS.tracks.piano = (function () {
     var pool = ['E4','F4','G4','A4','B4','C5','D5','E5','F5'];
     var focus = pool.slice(0, Math.min(pool.length, 4 + i));
     var ex = [];
-    for (var k = 0; k < 3; k++) {
-      var nt = U.pick(focus, rand);
+    U.shuffle(focus, rand).slice(0, 3).forEach(function (nt) {
       ex.push({ type: 'namenote', clef: 'treble', note: nt,
                 options: letterOptions(N.letter(nt), rand), answer: N.letter(nt),
                 prompt: 'Name this note' });
-    }
+    });
     ex.push(theory('Which note sits on the bottom line of the treble staff?', 'E',
       ['G', 'C', 'F'], rand));
     ex.push({ type: 'keypress', ask: 'staff', clef: 'treble', note: U.pick(focus, rand),
@@ -154,12 +153,11 @@ HS.tracks.piano = (function () {
     var pool = ['G2','A2','B2','C3','D3','E3','F3','G3','A3'];
     var focus = pool.slice(0, Math.min(pool.length, 4 + i));
     var ex = [];
-    for (var k = 0; k < 3; k++) {
-      var nt = U.pick(focus, rand);
+    U.shuffle(focus, rand).slice(0, 3).forEach(function (nt) {
       ex.push({ type: 'namenote', clef: 'bass', note: nt,
                 options: letterOptions(N.letter(nt), rand), answer: N.letter(nt),
                 prompt: 'Name this note' });
-    }
+    });
     ex.push(theory('Which note sits on the bottom line of the bass staff?', 'G',
       ['E', 'F', 'A'], rand));
     ex.push({ type: 'keypress', ask: 'staff', clef: 'bass', note: U.pick(focus, rand),
@@ -334,10 +332,26 @@ HS.tracks.piano = (function () {
 
   var BUILDERS = [u1, u2, u3, u4, u5, u6, u7, u8, u9, u10];
 
+  var MIN_PER_LEVEL = 7;
+
+  function sig(ex) { return ex.type + '|' + (ex.question || ex.note || (ex.notes || []).join('') || ex.prompt); }
+
+  /** Early levels in a unit are naturally short — top them up from the same material. */
   function build(n) {
-    var rand = U.rng('pn-' + n);
-    var ui = Math.floor((n - 1) / PER);
-    return BUILDERS[ui](idx(n), rand);
+    var ui = Math.floor((n - 1) / PER), i = idx(n);
+    var list = BUILDERS[ui](i, U.rng('pn-' + n));
+    var seen = {};
+    list.forEach(function (e) { seen[sig(e)] = true; });
+
+    for (var pass = 1; list.length < MIN_PER_LEVEL && pass <= 4; pass++) {
+      BUILDERS[ui](Math.min(PER - 1, i + pass * 2), U.rng('pn-' + n + '-x' + pass))
+        .forEach(function (e) {
+          if (list.length >= MIN_PER_LEVEL || seen[sig(e)]) return;
+          seen[sig(e)] = true;
+          list.push(e);
+        });
+    }
+    return list;
   }
 
   return {

@@ -14,6 +14,27 @@ HS.exercises = (function () {
     }, [small ? '🐢' : '🔊']);
   }
 
+  /** A little drawn note (whole / half / quarter / eighth) — no music font needed. */
+  function noteFigure(dur) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 26 40');
+    svg.setAttribute('width', '26'); svg.setAttribute('height', '40');
+    function add(tag, attrs) {
+      var n = document.createElementNS(NS, tag);
+      Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+      svg.appendChild(n); return n;
+    }
+    var cy = 30;
+    var head = add('ellipse', { cx: 9, cy: cy, rx: 6.6, ry: 5, transform: 'rotate(-18 9 ' + cy + ')',
+      fill: dur >= 2 ? 'none' : 'currentColor', stroke: 'currentColor', 'stroke-width': dur >= 2 ? 2 : 0 });
+    if (dur < 4) {
+      add('line', { x1: 15.2, x2: 15.2, y1: cy - 1, y2: 6, stroke: 'currentColor', 'stroke-width': 1.9 });
+      if (dur <= 0.5) add('path', { d: 'M15.2,6 q9,4 8,14 q-1,-8 -8,-10 z', fill: 'currentColor' });
+    }
+    return svg;
+  }
+
   function head(text) { return el('h2.q-head', { text: text }); }
   function sub(text) { return el('div.q-sub', { text: text }); }
 
@@ -288,9 +309,10 @@ HS.exercises = (function () {
     var header = [sub(ex.prompt)];
 
     if (ex.ask === 'name') {
-      header.push(head('Play ' + ex.note.replace(/(\d)/, ' $1')));
+      var span = HS.notes.midi(ex.to || 'C5') - HS.notes.midi(ex.from || 'C4');
+      header.push(head('Play ' + (span > 12 ? ex.note : ex.note.replace(/-?\d/, ''))));
     } else if (ex.ask === 'staff') {
-      header.push(staffBox({ clef: ex.clef || 'treble', notes: [ex.note], width: 260 }));
+      header.push(staffBox({ clef: ex.clef || 'treble', notes: [ex.note] }));
     } else {
       header.push(el('div.prompt-line', {}, [
         playBtn('🔊 Play it again', function () { HS.audio.note(ex.note, 1.2); })
@@ -315,7 +337,7 @@ HS.exercises = (function () {
   var namenote = function (ex) {
     return withHeader([
       sub(ex.prompt),
-      staffBox({ clef: ex.clef, notes: [ex.note], width: 260 })
+      staffBox({ clef: ex.clef, notes: [ex.note] })
     ], choiceUI(ex.options, ex.answer, { two: true }));
   };
 
@@ -328,7 +350,7 @@ HS.exercises = (function () {
       ]));
       setTimeout(function () { HS.audio.melody([ex.a, ex.b], { dur: 0.7 }); }, 250);
     } else {
-      header.push(staffBox({ clef: ex.clef || 'treble', notes: [ex.a, ex.b], width: 300 }));
+      header.push(staffBox({ clef: ex.clef || 'treble', notes: [ex.a, ex.b] }));
       header.push(el('div.row', {}, [el('button.btn.ghost.sm', {
         type: 'button', onclick: function () { HS.audio.melody([ex.a, ex.b], { dur: 0.7 }); }
       }, ['🔊 Hear it'])]));
@@ -352,7 +374,7 @@ HS.exercises = (function () {
     var notes = ex.notes;
     var header = [sub(ex.prompt)];
 
-    if (ex.showStaff) header.push(staffBox({ clef: ex.clef || 'treble', notes: notes, width: Math.max(260, 90 + notes.length * 52) }));
+    if (ex.showStaff) header.push(staffBox({ clef: ex.clef || 'treble', notes: notes }));
     else if (!ex.hideNotes) header.push(head(notes.map(function (n) { return n.replace(/\d/, ''); }).join('  ')));
 
     var progressText = el('div.gloss', { text: 'Note 1 of ' + notes.length });
@@ -395,11 +417,10 @@ HS.exercises = (function () {
     var pattern = ex.pattern;                 // beats per note
     var beatMs = 60000 / (ex.bpm || 80);
     var taps = [], started = false, boxes = [];
-    var symbols = { 4: '𝅝', 2: '𝅗𝅥', 1: '𝅘𝅥', 0.5: '𝅘𝅥𝅮' };
 
     var track = el('div.rhythm-track');
     pattern.forEach(function (d) {
-      var b = el('div.beat', { title: d + ' beat' + (d === 1 ? '' : 's') }, [symbols[d] || '♩']);
+      var b = el('div.beat', { title: d + ' beat' + (d === 1 ? '' : 's') }, [noteFigure(d)]);
       boxes.push(b); track.appendChild(b);
     });
 

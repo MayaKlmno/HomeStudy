@@ -80,6 +80,7 @@ HS.engine = (function () {
       var btn = el('button.btn.primary.wide', {
         type: 'button', disabled: !r.canCheck(),
         onclick: function () {
+          if (r.free) { state.done++; return next(); }   // nothing was asked — just move on
           var res = r.check();
           if (r.afterCheck) r.afterCheck(res.correct);
           settle(res.correct, res.solution);

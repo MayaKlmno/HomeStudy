@@ -55,13 +55,21 @@ HS.tracks.french = (function () {
     };
   }
 
+  /** Strip punctuation so the word tiles read as plain words. */
+  function tileWords(fr) {
+    return String(fr).split(/\s+/)
+      .map(function (w) { return w.replace(/^[«»"“”]+|[.,!?;:«»"“”]+$/g, ''); })
+      .filter(function (w) { return w.length > 0; });
+  }
+
   function assembleEx(sent, unit, rand) {
-    var words = sent.fr.split(/\s+/);
+    var words = tileWords(sent.fr);
     var extra = U.shuffle(unit.sentences, rand)
       .filter(function (s) { return s.fr !== sent.fr; })
-      .slice(0, 3)
-      .map(function (s) { return U.pick(s.fr.split(/\s+/), rand); })
-      .filter(function (w) { return words.indexOf(w) === -1; });
+      .map(function (s) { return U.pick(tileWords(s.fr), rand); })
+      .filter(function (w, i, arr) {
+        return words.indexOf(w) === -1 && arr.indexOf(w) === i;
+      });
     return {
       type: 'assemble', prompt: 'Write this in French',
       question: sent.en, answer: sent.fr, speak: speakable(sent.fr),

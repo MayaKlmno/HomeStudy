@@ -1,10 +1,10 @@
 /* Hand-rolled SVG music notation: staff lines, clef, note heads, stems, ledger lines. */
 HS.staff = (function () {
   var NS = 'http://www.w3.org/2000/svg';
-  var GAP = 12;            // distance between staff lines
+  var GAP = 15;            // distance between staff lines
   var HALF = GAP / 2;      // one diatonic step
-  var TOP = 46;            // y of the top staff line
-  var LEFT = 52;           // x where the staff starts (after the clef)
+  var TOP = 52;            // y of the top staff line
+  var LEFT = 60;           // x where the staff starts (after the clef)
 
   // Bottom line of each clef, used as the anchor for vertical placement.
   var ANCHOR = { treble: 'E4', bass: 'G2' };
@@ -32,17 +32,40 @@ HS.staff = (function () {
   function drawClef(g, clef, top) {
     var t = svg('text', {
       class: 'clef', x: 10,
-      y: clef === 'treble' ? top + 4 * GAP + 8 : top + 2 * GAP + 8,
-      'font-size': clef === 'treble' ? 74 : 54,
+      y: top + 4 * GAP,
+      'font-size': clef === 'treble' ? 90 : 66,
       'font-family': CLEF_FONT
     });
     t.textContent = GLYPH[clef];
     g.appendChild(t);
+    // The glyph's proportions vary by font, so measure it once it is on screen and
+    // scale/shift it to sit correctly against these five lines.
+    fitClef(t, clef, top);
+  }
+
+  /** Two measured passes: size the glyph to the staff, then align its top edge. */
+  function fitClef(t, clef, top) {
+    var wantTop = clef === 'treble' ? top - GAP * 1.15 : top + GAP * 0.85;
+    var wantH   = clef === 'treble' ? GAP * 6.3 : GAP * 3.2;
+
+    requestAnimationFrame(function () {
+      var b;
+      try { b = t.getBBox(); } catch (e) { return; }
+      if (!b || !b.height) return;
+      var size = parseFloat(t.getAttribute('font-size'));
+      t.setAttribute('font-size', Math.max(8, size * (wantH / b.height)));
+      requestAnimationFrame(function () {
+        var b2;
+        try { b2 = t.getBBox(); } catch (e) { return; }
+        if (!b2 || !b2.height) return;
+        t.setAttribute('y', parseFloat(t.getAttribute('y')) + (wantTop - b2.y));
+      });
+    });
   }
 
   function drawLedgers(g, x, y, clef, top) {
     var bottom = top + 4 * GAP;
-    var w = 11, i;
+    var w = 13, i;
     for (i = top - GAP; y <= i + 1; i -= GAP) {
       g.appendChild(svg('line', { class: 'ledger', x1: x - w, x2: x + w, y1: i, y2: i }));
     }
@@ -63,27 +86,27 @@ HS.staff = (function () {
     drawLedgers(g, x, y, clef, top);
 
     var head = svg('ellipse', {
-      class: cls, cx: x, cy: y, rx: 7.6, ry: 5.6,
+      class: cls, cx: x, cy: y, rx: 9.2, ry: 6.8,
       transform: 'rotate(-18 ' + x + ' ' + y + ')'
     });
     if (open) { head.setAttribute('fill', 'none'); head.setAttribute('stroke', 'currentColor'); head.setAttribute('stroke-width', 2.2); }
     g.appendChild(head);
 
     if (/[#b]/.test(nm)) {
-      var acc = svg('text', { class: 'clef', x: x - 22, y: y + 5, 'font-size': 19, 'font-family': CLEF_FONT });
+      var acc = svg('text', { class: 'clef', x: x - 25, y: y + 6, 'font-size': 23, 'font-family': CLEF_FONT });
       acc.textContent = /#/.test(nm) ? '♯' : '♭';
       g.appendChild(acc);
     }
 
     if (dur < 4) {                       // whole notes have no stem
       var up = y > top + 2 * GAP;        // notes below the middle line stem upward
-      var sx = up ? x + 7 : x - 7;
-      var sy2 = up ? y - 34 : y + 34;
+      var sx = up ? x + 8.6 : x - 8.6;
+      var sy2 = up ? y - 42 : y + 42;
       g.appendChild(svg('line', { class: 'stem', x1: sx, x2: sx, y1: y, y2: sy2 }));
       if (dur <= 0.5) {                  // eighth-note flag
         var d = up
-          ? 'M' + sx + ',' + sy2 + ' q10,6 9,17 q-2,-9 -9,-11 z'
-          : 'M' + sx + ',' + sy2 + ' q10,-6 9,-17 q-2,9 -9,11 z';
+          ? 'M' + sx + ',' + sy2 + ' q12,7 11,20 q-2,-11 -11,-13 z'
+          : 'M' + sx + ',' + sy2 + ' q12,-7 11,-20 q-2,11 -11,13 z';
         g.appendChild(svg('path', { class: 'head', d: d }));
       }
     }
@@ -104,9 +127,9 @@ HS.staff = (function () {
     opts = opts || {};
     var clef = opts.clef || 'treble';
     var notes = (opts.notes || []).map(function (n) { return typeof n === 'string' ? { name: n } : n; });
-    var spacing = opts.spacing || 56;
-    var width = opts.width || Math.max(220, LEFT + 40 + notes.length * spacing);
-    var height = opts.height || 190;
+    var spacing = opts.spacing || 64;
+    var width = opts.width || Math.max(190, LEFT + 54 + notes.length * spacing);
+    var height = opts.height || 210;
     var top = TOP;
 
     var root = svg('svg', {
@@ -120,7 +143,7 @@ HS.staff = (function () {
     drawClef(g, clef, top);
 
     notes.forEach(function (n, i) {
-      drawNote(g, n, LEFT + 26 + i * spacing, top, clef, {
+      drawNote(g, n, LEFT + 34 + i * spacing, top, clef, {
         label: opts.labels ? opts.labels[i] : null,
         hl: opts.highlight === i
       });
@@ -135,8 +158,8 @@ HS.staff = (function () {
   /** Grand staff: treble on top, bass underneath. */
   function renderGrand(opts) {
     var box = document.createElement('div');
-    box.appendChild(render(Object.assign({}, opts, { clef: 'treble', notes: opts.treble || [], height: 150 })));
-    box.appendChild(render(Object.assign({}, opts, { clef: 'bass', notes: opts.bass || [], height: 150 })));
+    box.appendChild(render(Object.assign({}, opts, { clef: 'treble', notes: opts.treble || [], height: 165 })));
+    box.appendChild(render(Object.assign({}, opts, { clef: 'bass', notes: opts.bass || [], height: 165 })));
     return box;
   }
 
