@@ -1,0 +1,52 @@
+:root{
+  --green:#58cc02;      --green-dark:#46a302;
+  --blue:#1cb0f6;       --blue-dark:#1899d6;
+  --red:#ff4b4b;        --red-dark:#e73c3c;
+  --yellow:#ffc800;     --yellow-dark:#e0ac00;
+  --purple:#ce82ff;     --purple-dark:#b063e0;
+  --orange:#ff9600;     --orange-dark:#e08600;
+
+  --ink:#3c3c3c;
+  --ink-soft:#777;
+  --line:#e5e5e5;
+  --line-dark:#d0d0d0;
+  --bg:#fff;
+  --bg-soft:#f7f7f7;
+  --correct-bg:#d7ffb8; --correct-ink:#58a700;
+  --wrong-bg:#ffdfe0;   --wrong-ink:#ea2b2b;
+  --radius:16px;
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --ink:#f1f1f1; --ink-soft:#a5a5a5;
+    --line:#3a3f45; --line-dark:#2b3035;
+    --bg:#131f24; --bg-soft:#1a2b32;
+    --correct-bg:#202f36; --correct-ink:#79b933;
+    --wrong-bg:#291f21;   --wrong-ink:#ff7b7b;
+  }
+}
+
+*,*::before,*::after{box-sizing:border-box;}
+
+html,body{height:100%;}
+
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:ui-rounded,"SF Pro Rounded","Nunito","Avenir Next",system-ui,-apple-system,sans-serif;
+  font-weight:700;
+  -webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:transparent;
+  overscroll-behavior:none;
+}
+
+h1,h2,h3,p{margin:0;}
+button{font:inherit;color:inherit;}
+
+.muted{color:var(--ink-soft);}
+.center{text-align:center;}
+
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:10px;}

@@ -1,0 +1,88 @@
+#app{min-height:100%;display:flex;flex-direction:column;}
+
+/* ---------- top bar ---------- */
+.topbar{
+  display:flex;align-items:center;gap:14px;
+  padding:14px max(16px, env(safe-area-inset-left)) 14px max(16px, env(safe-area-inset-right));
+  border-bottom:2px solid var(--line);
+  position:sticky;top:0;background:var(--bg);z-index:20;
+}
+.topbar .brand{font-size:20px;letter-spacing:-.4px;margin-right:auto;display:flex;align-items:center;gap:8px;cursor:pointer;background:none;border:0;padding:0;}
+.stat{display:flex;align-items:center;gap:6px;font-size:17px;}
+.stat.streak{color:var(--orange);}
+.stat.gems{color:var(--blue);}
+.stat.hearts{color:var(--red);}
+
+/* ---------- page ---------- */
+.page{width:100%;max-width:640px;margin:0 auto;padding:24px 16px 64px;flex:1;}
+.page.wide{max-width:900px;}
+
+/* ---------- track picker ---------- */
+.tracks{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:8px;}
+.track-card{
+  border:2px solid var(--line);border-bottom-width:5px;border-radius:var(--radius);
+  padding:22px;background:var(--bg);cursor:pointer;text-align:left;
+  transition:transform .08s ease, border-color .15s ease;
+}
+.track-card:hover{border-color:var(--line-dark);}
+.track-card:active{transform:translateY(2px);border-bottom-width:3px;}
+.track-card .icon{font-size:46px;line-height:1;}
+.track-card h2{font-size:22px;margin:12px 0 4px;}
+.track-card .sub{font-size:14px;color:var(--ink-soft);font-weight:600;}
+
+/* ---------- unit + path ---------- */
+.unit-banner{
+  border-radius:var(--radius);padding:16px 20px;color:#fff;margin:26px 0 8px;
+  display:flex;align-items:center;gap:14px;
+}
+.unit-banner .u-n{font-size:13px;opacity:.85;letter-spacing:.5px;text-transform:uppercase;}
+.unit-banner h3{font-size:20px;line-height:1.2;}
+.unit-banner .src{font-size:13px;font-weight:600;opacity:.9;margin-top:3px;}
+
+.path{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 0 8px;}
+.path-row{display:flex;justify-content:center;width:100%;}
+
+.node{
+  width:70px;height:64px;border:0;border-radius:50%;cursor:pointer;
+  background:var(--line);box-shadow:0 6px 0 var(--line-dark);
+  display:flex;align-items:center;justify-content:center;
+  font-size:26px;color:#fff;position:relative;
+  transition:transform .08s ease, box-shadow .08s ease;
+}
+.node:active:not(:disabled){transform:translateY(5px);box-shadow:0 1px 0 var(--line-dark);}
+.node:disabled{cursor:not-allowed;opacity:.55;}
+.node.done{background:var(--green);box-shadow:0 6px 0 var(--green-dark);}
+.node.current{background:var(--blue);box-shadow:0 6px 0 var(--blue-dark);}
+.node.gold{background:var(--yellow);box-shadow:0 6px 0 var(--yellow-dark);}
+.node .n{position:absolute;bottom:-2px;right:-2px;background:var(--bg);color:var(--ink-soft);
+  font-size:11px;border-radius:9px;padding:1px 5px;border:2px solid var(--line);}
+.node-wrap{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.node-label{font-size:12px;color:var(--ink-soft);font-weight:700;}
+
+/* ---------- lesson chrome ---------- */
+.lesson-top{
+  display:flex;align-items:center;gap:14px;padding:14px 16px;
+  position:sticky;top:0;background:var(--bg);z-index:20;
+}
+.progress{flex:1;height:16px;background:var(--line);border-radius:10px;overflow:hidden;}
+.progress > i{display:block;height:100%;background:var(--green);border-radius:10px;transition:width .3s ease;}
+.lesson-body{flex:1;width:100%;max-width:620px;margin:0 auto;padding:10px 16px 150px;}
+.lesson-foot{
+  position:fixed;left:0;right:0;bottom:0;border-top:2px solid var(--line);
+  background:var(--bg);padding:16px max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-bottom));
+  z-index:30;
+}
+.lesson-foot .inner{max-width:620px;margin:0 auto;display:flex;align-items:center;gap:16px;}
+.lesson-foot.correct{background:var(--correct-bg);border-color:transparent;}
+.lesson-foot.wrong{background:var(--wrong-bg);border-color:transparent;}
+.feedback{flex:1;display:flex;align-items:center;gap:12px;}
+.feedback .fb-icon{width:42px;height:42px;border-radius:50%;background:var(--bg);display:grid;place-items:center;font-size:22px;flex:none;}
+.feedback h4{font-size:19px;margin:0;}
+.feedback .sol{font-size:14px;font-weight:600;margin-top:2px;}
+.fb-correct{color:var(--correct-ink);}
+.fb-wrong{color:var(--wrong-ink);}
+
+@media (max-width:520px){
+  .lesson-foot .inner{flex-direction:column;align-items:stretch;gap:12px;}
+  .node{width:62px;height:58px;font-size:22px;}
+}
