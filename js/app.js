@@ -38,9 +38,14 @@ HS.app = (function () {
   }
 
   window.addEventListener('hashchange', render);
-  document.addEventListener('pointerdown', function once() {
-    HS.audio.unlock();
-    document.removeEventListener('pointerdown', once);
+  // Browsers (iOS Safari above all) only start sound from inside a real tap, so wake both the
+  // piano and the voice on the first one. pointerdown alone doesn't count on iOS.
+  ['pointerdown', 'touchend', 'click'].forEach(function (type) {
+    document.addEventListener(type, function once() {
+      HS.audio.unlock();
+      if (type !== 'pointerdown') HS.speech.unlock();
+      document.removeEventListener(type, once, true);
+    }, true);
   });
 
   render();

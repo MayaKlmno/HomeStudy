@@ -36,6 +36,11 @@ HS.engine = (function () {
       }
     }
 
+    function speakingOn() {
+      var st = HS.storage.state.settings;
+      return st.speaking !== false && !(st.noSpeakUntil > Date.now());
+    }
+
     function cleanup() {
       if (state.renderer && state.renderer.cleanup) state.renderer.cleanup();
       state.renderer = null;
@@ -50,6 +55,7 @@ HS.engine = (function () {
       if (!queue.length) return finishLesson();
 
       var ex = queue.shift();
+      if (ex.type === 'speak' && !speakingOn()) { total--; return next(); }
       state.current = ex;
       HS.speech.setLang(ex.lang || track.lang);
       bar.style.width = Math.round(state.done / Math.max(total, state.done + queue.length + 1) * 100) + '%';
@@ -57,7 +63,10 @@ HS.engine = (function () {
       var renderer = HS.exercises[ex.type];
       if (!renderer) { console.warn('unknown exercise', ex); return next(); }
 
-      var ctx = { finish: function (ok, sol) { settle(ok, sol); } };
+      var ctx = {
+        finish: function (ok, sol) { settle(ok, sol); },
+        skip: function () { state.done++; next(); }        // moved on without being graded
+      };
       var r = renderer(ex, ctx);
       state.renderer = r;
 
@@ -70,6 +79,7 @@ HS.engine = (function () {
         footInner.innerHTML = '';
         footInner.appendChild(el('div.feedback', {}, [
           el('div.muted', { text: ex.type === 'match' ? 'Match every pair to continue'
+            : ex.type === 'speak' ? 'Say it to continue'
             : ex.type === 'rhythm' ? 'Tap along to continue' : 'Play on the keyboard to continue' })
         ]));
       } else {

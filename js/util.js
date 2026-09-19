@@ -93,7 +93,17 @@ HS.util = (function () {
     return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
   }
 
+  /** A short message at the bottom of the screen that fades by itself. */
+  function toast(text) {
+    var old = document.querySelector('.toast');
+    if (old) old.remove();
+    var t = el('div.toast', { role: 'status', text: text });
+    document.body.appendChild(t);
+    setTimeout(function () { t.classList.add('gone'); }, 5000);
+    setTimeout(function () { t.remove(); }, 5600);
+  }
+
   return { el: el, rng: rng, shuffle: shuffle, pick: pick, sample: sample,
            normalize: normalize, bare: bare, clamp: clamp, todayKey: todayKey,
-           daysBetween: daysBetween, mmss: mmss };
+           daysBetween: daysBetween, mmss: mmss, toast: toast };
 })();

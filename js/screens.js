@@ -291,6 +291,8 @@ HS.screens = (function () {
 
   /* ---------------- settings ---------------- */
 
+  var TEST_LINES = { fr: 'Bonjour ! Je parle français.', ja: 'こんにちは。日本語を話します。', zh: '你好！我说中文。' };
+
   function settings() {
     var s = HS.storage.state;
 
@@ -331,6 +333,10 @@ HS.screens = (function () {
         function () { return s.settings.sound; },
         function (v) { s.settings.sound = v; }),
 
+      toggleRow('Speaking exercises', 'Say sentences out loud into the microphone',
+        function () { return s.settings.speaking !== false; },
+        function (v) { s.settings.speaking = v; s.settings.noSpeakUntil = 0; }),
+
       el('div.card', {}, [el('div.row', {}, [
         el('div', {}, [el('div', { text: 'Daily XP goal' }),
           el('div.muted', { style: { fontSize: '13px', fontWeight: '600' }, text: 'About 10–20 XP per lesson' })]),
@@ -342,10 +348,21 @@ HS.screens = (function () {
         el('div', { style: { fontSize: '14px', fontWeight: '600', marginTop: '6px', lineHeight: '1.8' } },
           Object.keys(HS.tracks).filter(function (k) { return HS.tracks[k].lang; }).map(function (k) {
             var t = HS.tracks[k];
-            return el('div', { text: t.icon + ' ' + t.name + ': ' + (HS.speech.available(t.lang) ? 'voice found ✓' : 'no voice installed') });
+            var result = el('span.muted', { style: { fontSize: '13px' } });
+            return el('div.row', { style: { gap: '10px' } }, [
+              el('div', { text: t.icon + ' ' + t.name + ': ' + (HS.speech.available(t.lang) ? 'voice found ✓' : 'no voice listed') }),
+              el('div.spacer'), result,
+              el('button.btn.ghost.sm', { type: 'button', onclick: function () {
+                HS.speech.unlock();
+                result.textContent = 'playing…';
+                HS.speech.say(TEST_LINES[t.lang.split('-')[0]] || t.name, { lang: t.lang, onEnd: function (ok) {
+                  result.textContent = ok ? 'played ✓' : 'no sound ✕';
+                } });
+              } }, ['🔊 Test'])
+            ]);
           })),
-        el('div.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '6px' },
-          text: 'Missing one? iPhone: Settings → Accessibility → Spoken Content → Voices. Mac: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices.' })
+        el('div.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '6px', lineHeight: '1.5' },
+          text: 'Says “played” but you hear nothing? On iPhone, turn up the volume and check the silent switch. Missing a voice? iPhone: Settings → Accessibility → Spoken Content → Voices. Mac: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices. Speaking exercises on iPhone also need Settings → General → Keyboard → Enable Dictation.' })
       ]),
 
       el('div.card', {}, [el('div.row', {}, [

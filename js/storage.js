@@ -14,7 +14,7 @@ HS.storage = (function () {
     tracks: {},         // { french: { levels: { '3': {stars, best} }, unlocked: 1 } }
     mistakes: [],       // review pool: { track, ex }
     review: {},         // spaced review: { french: { '37:2': { box, due } } }
-    settings: { sound: true, speechRate: 0.85 }
+    settings: { sound: true, speechRate: 0.85, speaking: true, noSpeakUntil: 0 }
   };
 
   function fresh() { return JSON.parse(JSON.stringify(blank)); }

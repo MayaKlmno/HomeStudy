@@ -31,7 +31,13 @@ then open http://localhost:8765.
 
 For the listening exercises your system needs a voice for each language (macOS: System Settings →
 Accessibility → Spoken Content → System Voice → Manage Voices → French / Japanese / Chinese). Without
-one the app shows the text instead, so nothing breaks. Settings shows which voices were found.
+one the app shows the text instead, so nothing breaks. Settings has a 🔊 Test button for each
+language. On an iPhone, the voice plays even with the silent switch on (iOS 16.4+).
+
+Every level also has a speaking exercise: tap the mic and say the sentence. It uses the browser's
+speech recognition (on iPhone: Settings → General → Keyboard → Enable Dictation) and grades
+leniently. Where recognition isn't available it becomes "say it aloud, then tap I said it". Turn
+it off in Settings, or tap "Can't speak now" to skip it for an hour.
 
 ## Install on a phone
 
@@ -50,8 +56,8 @@ drill from the home screen, and words from finished language levels come back in
 
 **Language exercises** — every level opens with a tip on its one new point, then teaches 4–6 new
 words, two new sentences and a fill-in-the-blank. No word, sentence or quote appears twice in a
-track. Exercises: translate both ways, tap-the-words sentence building, listen and choose, type what
-you hear, match pairs, and a real line from a public-domain book with its title and chapter. Every
+track. Exercises: translate both ways, tap-the-words sentence building, listen and choose, say it out
+loud, type what you hear, match pairs, and a real line from a public-domain book with its title and chapter. Every
 unit closes with a reading passage and comprehension questions. The research behind each
 curriculum is in `content/<language>/RESEARCH.md`, and the editions used are in `SOURCES.md`.
 
@@ -72,7 +78,7 @@ js/
   storage.js          profiles and their progress in localStorage
   engine.js           lesson session: queue, hearts, XP, results
   exercises.js        every exercise renderer
-  speech.js           text-to-speech in the lesson's language
+  speech.js           text-to-speech and speech recognition in the lesson's language
   audio.js            note maths + Web Audio piano
   staff.js            SVG music notation
   keyboard.js         on-screen piano keyboard

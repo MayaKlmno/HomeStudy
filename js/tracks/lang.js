@@ -86,6 +86,15 @@ HS.makeLanguageTrack = function (cfg) {
     };
   }
 
+  /** Say a sentence out loud, straight after hearing it in the listening exercise. */
+  function speakEx(sent) {
+    return {
+      type: 'speak', lang: cfg.lang, prompt: 'Say this out loud',
+      text: sent.t, reading: readingOf(sent), translation: sent.en, speak: speakable(sent.t),
+      targets: [speakable(sent.t), sent.kana].filter(Boolean)
+    };
+  }
+
   function assembleEx(sent, u, rand) {
     var tiles = tilesOf(sent);
     var extra = U.shuffle(unitSentences(u), rand)
@@ -159,6 +168,7 @@ HS.makeLanguageTrack = function (cfg) {
     ex.push(wordChoice(w[3], w, rand, true, kana));
     ex.push(matchEx(w, rand));
     ex.push(listenEx(L.sentences[0], u, rand));
+    ex.push(speakEx(L.sentences[0]));
     ex.push(assembleEx(L.sentences[1], u, rand));
     ex.push(blankEx(L.blank, rand));
     ex.push(typeEx(w[w.length - 1], kana));

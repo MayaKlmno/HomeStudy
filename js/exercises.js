@@ -10,8 +10,24 @@ HS.exercises = (function () {
   function speakerBtn(text, small) {
     return el('button' + (small ? '.speaker.slow' : '.speaker'), {
       type: 'button', title: 'Play audio',
-      onclick: function () { HS.speech.say(text, { slow: small }); }
+      onclick: function () {
+        HS.speech.unlock();
+        HS.speech.say(text, { slow: small, onEnd: function (ok) { if (!ok) noSound(); } });
+      }
     }, [small ? '🐢' : '🔊']);
+  }
+
+  /** Said once per visit when a tap on 🔊 can't produce any speech. */
+  var warned = false;
+  function noSound() {
+    if (warned) return;
+    warned = true;
+    var msg = !HS.storage.state.settings.sound
+      ? 'Sound is off — turn it on in Settings.'
+      : !('speechSynthesis' in window)
+        ? 'This browser can’t speak text aloud.'
+        : 'Couldn’t play the voice. Check the volume, and in Settings use “Test” next to ' + HS.speech.languageName() + '.';
+    U.toast(msg);
   }
 
   /** A little drawn note (whole / half / quarter / eighth) — no music font needed. */
@@ -350,6 +366,115 @@ HS.exercises = (function () {
     };
   };
 
+  /* ---------- speaking ---------- */
+
+  function kataToHira(s) {
+    return String(s).replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+  }
+
+  function editDistance(a, b) {
+    var prev = [], cur, i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      cur = [i];
+      for (j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+
+  /** 0–1: how close what the recogniser heard is to any accepted form of the sentence. */
+  function closeness(heard, targets) {
+    var clean = function (s) { return kataToHira(U.bare(U.normalize(s))); };
+    var h = clean(heard);
+    return targets.reduce(function (best, t) {
+      var w = clean(t);
+      if (!w.length) return best;
+      return Math.max(best, 1 - editDistance(h, w) / Math.max(h.length, w.length));
+    }, 0);
+  }
+
+  /* Lenient on purpose: recognisers write Japanese in kanji where the lesson has kana, and
+     learners have accents. The point is to say it out loud, not to satisfy a machine. */
+  var PASS = { fr: 0.7, ja: 0.5, zh: 0.55 };
+
+  var speak = function (ex, ctx) {
+    var tag = ex.lang || 'fr-FR';
+    var pass = PASS[tag.split('-')[0]] || 0.7;
+    var tries = 0, stopFn = null;
+    var status = el('div.speak-status');
+    var mic = el('button.mic', { type: 'button', onclick: toggle }, [el('span.mic-icon', { text: '🎤' }), el('span.mic-label', { text: 'Tap and speak' })]);
+    var said = el('button.btn.ghost.sm', { type: 'button', onclick: function () { ctx.skip(); } }, ['I said it — continue']);
+    var cant = el('button.link-btn', { type: 'button', onclick: function () {
+      HS.storage.state.settings.noSpeakUntil = Date.now() + 60 * 60 * 1000;
+      HS.storage.save();
+      ctx.skip();
+    } }, ['Can’t speak now (skip for an hour)']);
+
+    var manual = !HS.speech.canListen();
+    if (manual) {
+      mic.hidden = true;
+      status.textContent = 'This browser can’t listen, so say it out loud yourself — then tap “I said it”.';
+    } else {
+      said.hidden = true;
+    }
+
+    function setListening(on) {
+      mic.classList.toggle('on', on);
+      mic.querySelector('.mic-label').textContent = on ? 'Listening… tap to stop' : (tries ? 'Try again' : 'Tap and speak');
+    }
+
+    function toggle() {
+      if (stopFn) { stopFn(); return; }
+      HS.speech.unlock();
+      status.textContent = '';
+      status.className = 'speak-status';
+      setListening(true);
+      stopFn = HS.speech.listen(tag, function (err, alts) {
+        stopFn = null;
+        setListening(false);
+        if (err && err !== 'no-speech') {
+          said.hidden = false;
+          mic.hidden = true;
+          status.textContent = err === 'not-allowed' || err === 'service-not-allowed'
+            ? 'Microphone or speech recognition is blocked. On iPhone, allow them in Settings → Safari, and turn on Settings → General → Keyboard → Enable Dictation. Until then, say it out loud and tap “I said it”.'
+            : err === 'network'
+              ? 'Speech recognition needs an internet connection here. Say it out loud and tap “I said it”.'
+              : 'Couldn’t listen (' + err + '). Say it out loud and tap “I said it”.';
+          return;
+        }
+        if (!alts.length) { status.textContent = 'I didn’t hear anything — tap the mic and speak a little louder.'; return; }
+        tries++;
+        var best = alts.reduce(function (b, a) { var c = closeness(a, ex.targets); return c > b.c ? { a: a, c: c } : b; }, { a: alts[0], c: -1 });
+        if (best.c >= pass) {
+          status.textContent = 'I heard: “' + best.a + '”';
+          status.className = 'speak-status good';
+          setTimeout(function () { ctx.finish(true, null); }, 500);
+          return;
+        }
+        status.className = 'speak-status bad';
+        status.textContent = 'I heard: “' + best.a + '”. Listen once more and try again.';
+        if (tries >= 3) said.hidden = false;     // don't let a fussy recogniser block the lesson
+      });
+    }
+
+    return {
+      auto: true,
+      node: el('div', {}, [
+        sub(ex.prompt),
+        el('div.prompt-line', {}, [
+          speakerBtn(ex.speak), speakerBtn(ex.speak, true),
+          el('div.bubble', {}, [el('div', { text: ex.text }), readingLine(ex.reading)])
+        ]),
+        el('div.gloss', { text: ex.translation }),
+        el('div.speak-box', {}, [mic, status, said, cant])
+      ]),
+      cleanup: function () { if (stopFn) stopFn(); }
+    };
+  };
+
   /** A real line from the book, with its title and chapter, and what it means. */
   var quote = function (ex) {
     var gloss = el('div.gloss', { text: ex.gloss });
@@ -565,7 +690,7 @@ HS.exercises = (function () {
 
   return {
     choice: choice, listen: listen, assemble: assemble, match: match, blank: blank,
-    type: typeIn, passage: passage, readq: readq, tip: tip, quote: quote,
+    type: typeIn, passage: passage, readq: readq, tip: tip, quote: quote, speak: speak,
     keypress: keypress, namenote: namenote, interval: interval, chordear: chordear,
     sequence: sequence, rhythm: rhythm
   };
