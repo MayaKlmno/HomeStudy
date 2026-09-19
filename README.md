@@ -28,6 +28,13 @@ For the French listening exercises your system needs a French voice installed (m
 Settings → Accessibility → Spoken Content → System Voice → Manage Voices → French). Without one the
 app shows the text instead, so nothing breaks.
 
+## Install on a phone
+
+HomeStudy is a Progressive Web App, served from GitHub Pages at
+https://mayaklmno.github.io/HomeStudy/. On an iPhone, open that link in Safari, tap Share → Add to
+Home Screen, and it launches full-screen and works offline after the first visit. After changing any
+file, bump `VERSION` in `sw.js` (and add new files to its list) so installed copies update.
+
 ## How it works
 
 Pick a track, then work down the path. Each level is 6–11 exercises. You get five hearts per
@@ -48,6 +55,8 @@ to download.
 
 ```
 index.html            the whole app
+manifest.webmanifest  PWA manifest; icons/ holds the home-screen icons
+sw.js                 service worker: offline cache
 styles/               base, layout, components, lesson
 js/
   util.js             DOM helpers, seeded RNG, text normalising
