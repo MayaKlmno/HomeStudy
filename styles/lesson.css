@@ -160,3 +160,26 @@
 
 /* Japanese early levels space their words: break lines only at those spaces where possible. */
 .bubble, .blank-sentence, .speak-box{word-break:keep-all;overflow-wrap:anywhere;}
+
+/* ---------- the ? help sheet ---------- */
+.help-btn{font-weight:800;font-size:20px;color:var(--blue);border:2px solid var(--line);border-radius:50%;
+  width:38px;height:38px;flex:none;display:flex;align-items:center;justify-content:center;}
+.help-shade{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;}
+.help-sheet{
+  width:100%;max-width:640px;max-height:82vh;overflow:auto;background:var(--bg);color:var(--ink);
+  border-radius:20px 20px 0 0;padding:16px 18px calc(22px + env(safe-area-inset-bottom));
+  box-shadow:0 -6px 30px rgba(0,0,0,.25);
+}
+.help-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.help-head h3{font-size:19px;}
+.help-warn{font-size:14px;font-weight:700;color:var(--ink-soft);background:var(--bg-soft);border-radius:12px;padding:10px 12px;margin:4px 0 8px;}
+.help-sec{margin-top:14px;}
+.help-sec h4{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft);margin-bottom:6px;}
+.help-sec p{font-weight:600;line-height:1.55;overflow-wrap:anywhere;}
+.help-answer,.help-item{display:flex;gap:12px;align-items:flex-start;}
+.help-items{display:flex;flex-direction:column;gap:10px;}
+.help-t{font-size:18px;font-weight:800;word-break:keep-all;overflow-wrap:anywhere;}
+.help-en{font-weight:600;color:var(--ink-soft);}
+.help-note{font-size:14px;font-weight:600;margin-top:2px;}
+.help-play{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+.speaker.mini{width:38px;height:38px;font-size:16px;flex:none;}

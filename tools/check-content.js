@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-/* Validates a language track's content: shape, no repeats, and (optionally) that every quote
-   appears verbatim in its source text.
+/* Validates a language track's content: shape, no repeats, explanations for the ? help, talk-mode
+   dialogs, and (optionally) that every quote appears verbatim in its source text.
+   Add --only units or --only talk to check one part.
 
    node tools/check-content.js french
    node tools/check-content.js japanese --sources path/to/sources.json
@@ -12,25 +13,29 @@
 var fs = require('fs'), path = require('path'), vm = require('vm');
 
 var lang = process.argv[2];
-if (!lang) { console.error('usage: check-content.js <french|japanese|chinese> [--sources map.json]'); process.exit(2); }
+if (!lang) { console.error('usage: check-content.js <french|spanish|japanese|chinese> [--sources map.json]'); process.exit(2); }
 var srcArg = process.argv.indexOf('--sources');
 var sources = srcArg > 0 ? JSON.parse(fs.readFileSync(process.argv[srcArg + 1], 'utf8')) : null;
 
 var root = path.join(__dirname, '..');
+// --only units | --only talk: check just the lesson units or just talk.js
+var onlyArg = process.argv.indexOf('--only'), only = onlyArg > 0 ? process.argv[onlyArg + 1] : '';
+var ONLY = only === 'units' ? /^u\d\d\.js$/ : only === 'talk' ? /^talk\.js$/ : /^(u\d\d|talk)\.js$/;
 var dir = path.join(root, 'js', 'tracks', lang);
 var ctx = { HS: {}, console: console };
 vm.createContext(ctx);
-fs.readdirSync(dir).filter(function (f) { return /^u\d\d\.js$/.test(f); }).sort().forEach(function (f) {
+fs.readdirSync(dir).filter(function (f) { return ONLY.test(f); }).sort().forEach(function (f) {
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f });
 });
 var units = (ctx.HS.content || {})[lang] || [];
+var talk = (ctx.HS.talk || {})[lang] || null;
 
 var errors = [], warnings = [];
 function err(where, msg) { errors.push(where + ': ' + msg); }
 function warn(where, msg) { warnings.push(where + ': ' + msg); }
 
-var needsReading = lang !== 'french';
-var cjk = lang !== 'french';
+var cjk = lang === 'japanese' || lang === 'chinese';
+var needsReading = cjk;
 
 function norm(s) {
   return String(s).normalize('NFKC').toLowerCase()
@@ -40,6 +45,8 @@ function lemma(s) {
   // French: "le chat", "un chat", "l’eau" count as the same word as "chat", "eau"
   var t = String(s).toLowerCase().replace(/’/g, "'").trim();
   if (lang === 'french') t = t.replace(/^(le|la|les|un|une|des|du|de la|l'|d')\s*/, '');
+  // Spanish: "el perro", "la casa", "unos amigos" count as "perro", "casa", "amigos"
+  if (lang === 'spanish') t = t.replace(/^(el|la|los|las|un|una|unos|unas|lo)\s+/, '');
   return norm(t);
 }
 
@@ -77,7 +84,45 @@ function checkQuote(q, where, isPassage) {
   }
 }
 
-if (units.length !== 10) err(lang, 'expected 10 units, found ' + units.length);
+if (only !== 'talk' && units.length !== 10) err(lang, 'expected 10 units, found ' + units.length);
+
+/* ---------- talk mode: spoken dialog levels (js/tracks/<lang>/talk.js) ---------- */
+if (talk) {
+  var youSeen = {}, sceneSeen = {};
+  if (!talk.lang) err('talk', 'missing lang');
+  if (!talk.levels || talk.levels.length < 30) err('talk', 'expected 30+ levels, found ' + (talk.levels || []).length);
+  (talk.levels || []).forEach(function (L, i) {
+    var w = 'talk level ' + (i + 1);
+    ['title', 'scene', 'turns'].forEach(function (k) { if (!L[k]) err(w, 'missing ' + k); });
+    if (!L.turns) return;
+    if (sceneSeen[norm(L.title)]) err(w, 'title repeats talk level ' + sceneSeen[norm(L.title)]);
+    sceneSeen[norm(L.title)] = i + 1;
+    var mine = 0, sig = [];
+    L.turns.forEach(function (turn, ti) {
+      var who = turn.you ? 'you' : turn.them ? 'them' : null;
+      if (!who) { err(w, 'turn ' + (ti + 1) + ' needs you or them'); return; }
+      var x = turn[who];
+      if (!x.t || !x.en) err(w, who + ' line needs t and en');
+      checkReading(x, w, who + ' line');
+      if (lang === 'japanese' && /[一-鿿]/.test(x.t) && !x.kana) err(w, 'line with kanji needs kana: ' + x.t);
+      if (who === 'you') {
+        mine++;
+        if (!x.cue) err(w, 'your line needs cue (the English instruction): ' + x.t);
+        if (!x.gloss) err(w, 'your line needs gloss (for the ? help): ' + x.t);
+        if (x.alt && !Array.isArray(x.alt)) err(w, 'alt must be a list');
+        var k = norm(x.t);
+        youSeen[k] = (youSeen[k] || []).concat(i + 1);
+        if (youSeen[k].length > 3) err(w, 'your line used in more than 3 levels (' + youSeen[k].join(', ') + '): ' + x.t);
+      }
+      sig.push(norm(x.t));
+    });
+    if (mine < 4 || mine > 7) err(w, 'needs 4–7 of your turns, has ' + mine);
+    if (L.turns[0] && L.turns[0].you && !L.turns[0].you.opens) { /* learner may open, fine */ }
+    var key = sig.join('|');
+    if (sceneSeen[key]) err(w, 'same dialog as talk level ' + sceneSeen[key]);
+    sceneSeen[key] = i + 1;
+  });
+}
 
 units.forEach(function (u, ui) {
   var uw = lang + ' unit ' + (ui + 1);
@@ -95,6 +140,7 @@ units.forEach(function (u, ui) {
 
     (L.sentences || []).forEach(function (s) {
       if (!s.t || !s.en) err(w, 'sentence needs t and en');
+      if (!s.gloss) err(w, 'sentence needs gloss (word-by-word, for the ? help): ' + s.t);
       checkReading(s, w, 'sentence');
       checkTokens(s, w);
       unique('sentence', norm(s.t), w, s.t);
@@ -110,6 +156,7 @@ units.forEach(function (u, ui) {
       if (qs.length < 3) err(w, 'passage needs 3+ questions');
       qs.forEach(function (q) {
         if (!q.q || !q.options || q.options.indexOf(q.answer) === -1) err(w, 'bad passage question: ' + q.q);
+        if (!q.why) err(w, 'passage question needs why (for the ? help): ' + q.q);
       });
       return;
     }
@@ -132,6 +179,7 @@ units.forEach(function (u, ui) {
       if (String(b.t).indexOf('___') === -1) err(w, 'blank.t needs ___');
       if (!b.options || b.options.indexOf(b.answer) === -1) err(w, 'blank options must include the answer');
       if (!b.en) err(w, 'blank needs en');
+      if (!b.why) err(w, 'blank needs why (for the ? help): ' + b.t);
       unique('blank', norm(b.t), w, b.t);
     }
 
@@ -156,5 +204,5 @@ units.forEach(function (u) {
 warnings.forEach(function (m) { console.log('warn  ' + m); });
 errors.forEach(function (m) { console.log('ERROR ' + m); });
 var counts = Object.keys(seen).map(function (k) { return Object.keys(seen[k]).length + ' ' + k + 's'; }).join(', ');
-console.log(lang + ': ' + units.length + ' units, ' + counts + ' — ' + errors.length + ' errors, ' + warnings.length + ' warnings');
+console.log(lang + ': ' + units.length + ' units, ' + counts + (talk ? ', ' + talk.levels.length + ' talk levels' : '') + ' — ' + errors.length + ' errors, ' + warnings.length + ' warnings');
 process.exit(errors.length ? 1 : 0);

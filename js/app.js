@@ -9,6 +9,7 @@ HS.app = (function () {
   }
 
   function render() {
+    if (HS.talkMode) HS.talkMode.stop();          // leaving the talk player ends the session
     var parts = (location.hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean);
     var view;
 
@@ -24,6 +25,9 @@ HS.app = (function () {
         if (!t || !n || n < 1 || n > t.total) view = HS.screens.home();
         else if (!HS.storage.isUnlocked(id, n)) view = HS.screens.track(id);
         else view = HS.engine.start(id, n);
+      }
+      else if (parts[0] === 'talk' && parts[1] && HS.talk && HS.talk[parts[1]]) {
+        view = parts[2] ? HS.talkMode.play(parts[1], parseInt(parts[2], 10) || 1) : HS.talkMode.list(parts[1]);
       }
       else if (parts[0] === 'practice') view = HS.screens.practice();
       else if (parts[0] === 'settings') view = HS.screens.settings();

@@ -205,6 +205,20 @@ HS.screens = (function () {
       ])]));
     }
 
+    if (HS.talk && HS.talk[id]) {
+      var tk = HS.storage.talk(id), tl = HS.talk[id].levels.length;
+      page.appendChild(el('div.card.talk-card', { style: { marginBottom: '18px' } }, [el('div.row', {}, [
+        el('div', {}, [
+          el('div', { style: { fontSize: '17px' }, text: '🗣 Talk mode — hands-free' }),
+          el('div.muted', { style: { fontSize: '13px', fontWeight: '600' },
+            text: tl + ' spoken dialogs for the car: listen, answer out loud, and it moves on by itself. Level ' +
+              Math.min(tk.unlocked, tl) + ' of ' + tl + '.' })
+        ]),
+        el('div.spacer'),
+        el('button.btn.primary.sm', { type: 'button', onclick: function () { HS.app.go('#/talk/' + id); } }, ['Talk'])
+      ])]));
+    }
+
     t.units.forEach(function (u, ui) {
       var banner = el('div.unit-banner', { style: { background: u.color } }, [
         el('div', {}, [
@@ -291,7 +305,7 @@ HS.screens = (function () {
 
   /* ---------------- settings ---------------- */
 
-  var TEST_LINES = { fr: 'Bonjour ! Je parle français.', ja: 'こんにちは。日本語を話します。', zh: '你好！我说中文。' };
+  var TEST_LINES = { fr: 'Bonjour ! Je parle français.', es: '¡Hola! Hablo español.', ja: 'こんにちは。日本語を話します。', zh: '你好！我说中文。' };
 
   function settings() {
     var s = HS.storage.state;

@@ -21,27 +21,28 @@ HS.tracks.piano = (function () {
 
   var WHITE = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 
+  // Easiest first: fewer notes and a narrow range, then wider leaps, then sharps (Für Elise).
   var PIECES = [
     { title: 'Au clair de la lune', from: 'C4', to: 'C5', phrases: [
         ['C4','C4','C4','D4','E4','D4'], ['C4','E4','D4','D4','C4'] ] },
+    { title: 'Jingle Bells', from: 'C4', to: 'C5', phrases: [
+        ['E4','E4','E4'], ['E4','E4','E4'], ['E4','G4','C4','D4','E4'] ] },
+    { title: 'Ode to Joy', from: 'C4', to: 'C5', phrases: [
+        ['E4','E4','F4','G4'], ['G4','F4','E4','D4'], ['C4','C4','D4','E4','E4','D4','D4'] ] },
     { title: 'Twinkle, Twinkle, Little Star', from: 'C4', to: 'C5', phrases: [
         ['C4','C4','G4','G4','A4','A4','G4'], ['F4','F4','E4','E4','D4','D4','C4'] ] },
     { title: 'Frère Jacques', from: 'G3', to: 'C5', phrases: [
         ['C4','D4','E4','C4'], ['E4','F4','G4'], ['G4','A4','G4','F4','E4','C4'] ] },
-    { title: 'Ode to Joy', from: 'C4', to: 'C5', phrases: [
-        ['E4','E4','F4','G4'], ['G4','F4','E4','D4'], ['C4','C4','D4','E4','E4','D4','D4'] ] },
-    { title: 'Jingle Bells', from: 'C4', to: 'C5', phrases: [
-        ['E4','E4','E4'], ['E4','E4','E4'], ['E4','G4','C4','D4','E4'] ] },
-    { title: 'Amazing Grace', from: 'G3', to: 'C5', phrases: [
-        ['G3','C4','E4','C4'], ['E4','D4','C4','A3','G3'] ] },
-    { title: 'Für Elise (opening)', from: 'A4', to: 'E5', phrases: [
-        ['E5','D#5','E5','D#5','E5'], ['B4','D5','C5','A4'] ] },
+    { title: 'Eine kleine Nachtmusik', from: 'D4', to: 'D5', phrases: [
+        ['G4','D4','G4','D4'], ['G4','D4','G4','B4','D5'] ] },
     { title: 'Minuet in G', from: 'G4', to: 'D5', phrases: [
         ['D5','G4','A4','B4','C5'], ['D5','G4','G4'] ] },
+    { title: 'Amazing Grace', from: 'G3', to: 'C5', phrases: [
+        ['G3','C4','E4','C4'], ['E4','D4','C4','A3','G3'] ] },
     { title: 'Greensleeves', from: 'G4', to: 'F5', phrases: [
         ['A4','C5','D5','E5','F5','E5'], ['D5','B4','G4','A4','B4','C5','A4'] ] },
-    { title: 'Eine kleine Nachtmusik', from: 'G4', to: 'D5', phrases: [
-        ['G4','D4','G4','D4'], ['G4','D4','G4','B4','D5'] ] }
+    { title: 'Für Elise (opening)', from: 'A4', to: 'E5', phrases: [
+        ['E5','D#5','E5','D#5','E5'], ['B4','D5','C5','A4'] ] }
   ];
 
   var SCALES = {
@@ -66,9 +67,42 @@ HS.tracks.piano = (function () {
     return U.shuffle([correct].concat(wrong), rand);
   }
 
+  /* The ? help for each theory question. */
+  var WHY = {
+    'How many black keys are in the group next to C and D?': 'Black keys come in groups of two and three. C and D sit around the group of two: C just left of it, D in the middle.',
+    'C sits directly to the left of which black-key group?': 'Find any group of two black keys — the white key just to its left is always C.',
+    'What is the note in the middle of the piano called?': 'The C nearest the middle of the keyboard (C4) is middle C. It sits between the treble and bass staves.',
+    'Which note sits on the bottom line of the treble staff?': 'Treble lines, bottom to top: E G B D F — “Every Good Boy Does Fine”. So the bottom line is E.',
+    'The treble clef is also called the…': 'Its curl wraps around the second line, marking that line as G — so it is the G clef.',
+    'The spaces of the treble staff spell which word?': 'Treble spaces, bottom to top: F A C E — they spell FACE.',
+    'How many beats does a half note get in 4/4?': 'In 4/4 a quarter note is one beat, so a half note (twice as long) is two.',
+    'A whole note lasts how many beats?': 'A whole note fills a whole 4/4 bar: four beats.',
+    'What does the top number of 4/4 tell you?': 'Top number = how many beats in each bar; bottom number = which note gets one beat (4 = quarter note).',
+    'Two eighth notes together last as long as…': 'An eighth note is half a beat, so two of them make one beat — a quarter note.',
+    'A dot after a note…': 'A dot adds half the note’s value: a dotted half note is 2 + 1 = 3 beats.',
+    'Which note sits on the bottom line of the bass staff?': 'Bass lines, bottom to top: G B D F A — “Good Boys Do Fine Always”. So the bottom line is G.',
+    'The bass clef is also called the…': 'Its two dots sit either side of the fourth line, marking it as F — so it is the F clef.',
+    'On the grand staff, which clef does the left hand usually read?': 'The left hand plays the lower notes, which are written on the bass (F) clef.',
+    'How many semitones in a perfect fifth?': 'Count keys, black and white, from C up to G: C♯ D D♯ E F F♯ G = 7 semitones.',
+    'An octave is how many semitones?': 'From one C to the next C there are 12 keys to step through (7 white + 5 black).',
+    'Which interval sounds the most "open" and stable?': 'The perfect fifth (like C–G) blends so smoothly it sounds open and hollow — think of the Star Wars theme’s first leap.',
+    'How many notes are in a major scale, counting the octave?': 'Seven different letters (C D E F G A B), plus the top C again = eight.',
+    'Which key signature has one sharp?': 'G major needs F♯ to keep the major-scale pattern, so its key signature has one sharp.',
+    'Which note is sharp in G major?': 'G A B C D E F♯ G — F must be raised to F♯ to make the last step a half step.',
+    'Which note is flat in F major?': 'F G A B♭ C D E F — B must be lowered to B♭ so A to B♭ is a half step.',
+    'The pattern of a major scale is…': 'W = whole step (2 keys), H = half step (1 key). C to C on white keys is W W H W W W H.',
+    'A major triad is built from which intervals?': 'C–E is a major third (4 semitones), E–G a minor third (3). Major = big third first; minor = small third first.',
+    'Which three notes make an F major triad?': 'Root F, then up a major third to A, then a minor third to C: F A C.',
+    'The three chords in most folk songs are…': 'I, IV and V — in C major that’s C, F and G. Most folk, blues and pop songs use just these.',
+    'Sight-reading works best when your eyes…': 'Reading a note or two ahead gives your hands time to get there, so you don’t stop.',
+    'The best way to train your ear is to…': 'Singing makes you hear the pitch in your head first; then finding it on the keys confirms it.'
+  };
+
   function theory(q, correct, others, rand) {
     return { type: 'choice', prompt: 'Music theory', question: q,
-             options: U.shuffle([correct].concat(others), rand), answer: correct };
+             options: U.shuffle([correct].concat(others), rand), answer: correct,
+             help: { answer: correct, why: WHY[q] || (/play it slowly/.test(q)
+               ? 'Evenness first, speed later: slow, steady practice is what makes a piece sound musical.' : '') } };
   }
 
   /* ---------------- unit builders ---------------- */
@@ -111,16 +145,16 @@ HS.tracks.piano = (function () {
     ex.push(theory('Which note sits on the bottom line of the treble staff?', 'E',
       ['G', 'C', 'F'], rand));
     ex.push({ type: 'keypress', ask: 'staff', clef: 'treble', note: U.pick(focus, rand),
-              from: 'C4', to: 'C5', labels: 'none', prompt: 'Play the note on the staff' });
+              from: 'C4', to: 'F5', labels: 'none', prompt: 'Play the note on the staff' });
     if (i >= 2) ex.push(theory('The treble clef is also called the…', 'G clef',
       ['F clef', 'C clef', 'D clef'], rand));
     if (i >= 3) ex.push({ type: 'namenote', clef: 'treble', note: 'C4',
                           options: letterOptions('C', rand), answer: 'C',
                           prompt: 'This one sits on a ledger line — name it' });
     if (i >= 4) ex.push({ type: 'keypress', ask: 'staff', clef: 'treble', note: U.pick(focus, rand),
-                          from: 'C4', to: 'C5', labels: 'none', prompt: 'Play the note on the staff' });
+                          from: 'C4', to: 'F5', labels: 'none', prompt: 'Play the note on the staff' });
     if (i >= 6) ex.push({ type: 'sequence', notes: U.shuffle(focus, rand).slice(0, 3), clef: 'treble',
-                          showStaff: true, from: 'C4', to: 'C5', prompt: 'Play what you see' });
+                          showStaff: true, from: 'C4', to: 'F5', prompt: 'Play what you see' });
     if (i >= 8) ex.push(theory('The spaces of the treble staff spell which word?', 'FACE',
       ['EGBD', 'GBDF', 'ACEG'], rand));
     return ex;
@@ -351,7 +385,43 @@ HS.tracks.piano = (function () {
           list.push(e);
         });
     }
+
+    // Keep the course climbing steadily: top every level up to its share of notes to play.
+    var rand = U.rng('pn-' + n + '-ramp');
+    for (var guard = 0; notesToPlay(list) < rampNotes(n) && guard < 6; guard++) list.push(reviewPhrase(n, ui, rand));
     return list;
+  }
+
+  /* ---------- the difficulty ramp ---------- */
+
+  /** Notes the learner plays in a level: from about 5 at level 1 to about 45 at level 100. */
+  function rampNotes(n) { return Math.round(5 + 40 * (n - 1) / (TOTAL - 1)); }
+  /** Longest review phrase: from 2 notes at level 1 to 12 at level 100. */
+  function rampPhrase(n) { return Math.round(2 + 10 * (n - 1) / (TOTAL - 1)); }
+
+  function notesToPlay(list) {
+    return list.reduce(function (sum, e) {
+      return sum + (e.type === 'sequence' ? e.notes.length : e.type === 'keypress' ? 1 : 0);
+    }, 0);
+  }
+
+  /** A stepwise C-major phrase from what the unit practises: letters, treble, bass, or by ear. */
+  function reviewPhrase(n, ui, rand) {
+    var bass = ui === 3;
+    var scale = bass ? ['C3','D3','E3','F3','G3','A3','B3','C4']
+      : n > 60 ? ['C4','D4','E4','F4','G4','A4','B4','C5','D5','E5','F5','G5']
+      : ['C4','D4','E4','F4','G4','A4','B4','C5'];
+    var len = rampPhrase(n), pos = U.pick([0, 2, 4], rand), notes = [];
+    for (var k = 0; k < len; k++) {
+      notes.push(scale[pos]);
+      var step = U.pick(n > 40 ? [-2, -1, 1, 2, 3] : [-1, 1, 1, 2], rand);
+      pos = U.clamp(pos + step, 0, scale.length - 1);
+    }
+    var ex = { type: 'sequence', notes: notes, from: scale[0], to: scale[scale.length - 1], playFirst: true,
+               prompt: 'Review — play this ' + len + '-note phrase' };
+    if (ui >= 8) { ex.hideNotes = true; ex.prompt = 'Review — listen, then play the ' + len + ' notes back'; }
+    else if (ui >= 1) { ex.showStaff = true; ex.clef = bass ? 'bass' : 'treble'; }
+    return ex;
   }
 
   return {
@@ -366,6 +436,8 @@ HS.tracks.piano = (function () {
     unitFor: unitFor,
     title: title,
     build: build,
+    rampNotes: rampNotes,
+    notesToPlay: notesToPlay,
     PIECES: PIECES
   };
 })();

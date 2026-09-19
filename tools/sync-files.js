@@ -12,12 +12,21 @@ var skipAt = process.argv.indexOf('--without');
 var skip = skipAt > 0 ? process.argv[skipAt + 1].split(',') : [];
 
 var CORE = ['util', 'storage', 'speech', 'audio', 'staff', 'keyboard'];
-var LANGS = ['french', 'japanese', 'chinese'].filter(function (l) { return skip.indexOf(l) === -1; });
-var UI = ['exercises', 'engine', 'screens', 'app'];
+// Every language folder with a track.js, in a fixed order first, then any others alphabetically.
+var ORDER = ['french', 'spanish', 'japanese', 'chinese'];
+var LANGS = fs.readdirSync(path.join(root, 'js', 'tracks')).filter(function (d) {
+  return d !== 'piano' && fs.existsSync(path.join(root, 'js', 'tracks', d, 'track.js')) && skip.indexOf(d) === -1;
+}).sort(function (a, b) {
+  var ia = ORDER.indexOf(a), ib = ORDER.indexOf(b);
+  return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || (a < b ? -1 : 1);
+});
+var UI = ['exercises', 'help', 'engine', 'talk', 'screens', 'app'];
 
+/** A language's unit files, then its talk-mode dialogs if it has them. */
 function units(lang) {
   var dir = path.join(root, 'js', 'tracks', lang);
-  return fs.readdirSync(dir).filter(function (f) { return /^u\d\d\.js$/.test(f); }).sort()
+  return fs.readdirSync(dir).filter(function (f) { return /^(u\d\d|talk)\.js$/.test(f); })
+    .sort(function (a, b) { return (a === 'talk.js') - (b === 'talk.js') || (a < b ? -1 : 1); })
     .map(function (f) { return 'js/tracks/' + lang + '/' + f; });
 }
 

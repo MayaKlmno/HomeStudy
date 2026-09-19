@@ -21,8 +21,21 @@ HS.engine = (function () {
     var top = el('div.lesson-top', {}, [
       el('button.icon-btn', { type: 'button', title: 'Leave lesson', onclick: quit }, ['✕']),
       el('div.progress', {}, [bar]),
+      el('button.icon-btn.help-btn', { type: 'button', title: 'Explain this', 'aria-label': 'Explain this', onclick: openHelp }, ['?']),
       heartsEl
     ]);
+
+    /** Explain the current exercise. Peeking before answering brings it back once at the end. */
+    function openHelp() {
+      var ex = state.current;
+      if (!ex) return;
+      var note = '';
+      if (!state.checked && !ex.peeked && ['tip', 'passage'].indexOf(ex.type) === -1) {
+        ex.peeked = true;
+        note = 'No penalty for looking — this one comes back once at the end so you can answer it from memory.';
+      }
+      HS.help.show(ex, { note: note });
+    }
     var body = el('div.lesson-body');
     var footInner = el('div.inner');
     var foot = el('div.lesson-foot', {}, [footInner]);
@@ -42,6 +55,7 @@ HS.engine = (function () {
     }
 
     function cleanup() {
+      HS.help.close();
       if (state.renderer && state.renderer.cleanup) state.renderer.cleanup();
       state.renderer = null;
     }
@@ -120,7 +134,11 @@ HS.engine = (function () {
       var ex = state.current;
       if (ex && ex.review && !state.graded[ex.review]) {   // only the first try counts for review
         state.graded[ex.review] = true;
-        HS.storage.gradeReview(trackId, ex.review, ok);
+        HS.storage.gradeReview(trackId, ex.review, ok && !ex.peeked);
+      }
+      if (ok && ex && ex.peeked && !ex.again) {             // looked it up: try it once more from memory
+        queue.push(Object.assign({}, ex, { peeked: false, again: true }));
+        total++;
       }
 
       if (ok) {

@@ -1,15 +1,18 @@
 # HomeStudy
 
-A Duolingo-style learning app you can open in a browser. Four tracks, 100 levels each:
+A Duolingo-style learning app you can open in a browser. Five tracks, 100 levels each:
 
 - **French** — A1 to about B1, built on public-domain French classics, from Perrault's fairy tales
   up to Proust.
+- **Spanish** — A1 to about B1, built on public-domain Spanish-language classics.
 - **Japanese** — hiragana and katakana first, then polite Japanese up to about JLPT N4, built on
   Aozora Bunko classics from 新美南吉 to 夏目漱石.
 - **Chinese** — pinyin and tones first, then modern Mandarin from HSK 1 to HSK 3, with every quote
   taken from Sun Tzu's *The Art of War* (孙子兵法).
 - **Piano** — note reading, rhythm, intervals, chords, ear training and real pieces, played on an
   on-screen keyboard.
+
+Every language also has a **Talk mode**: 40 hands-free spoken dialogs for long drives (see below).
 
 No installation, no build step, no internet needed. Progress is saved in the browser, with a
 separate profile for each person who uses the device.
@@ -61,6 +64,27 @@ loud, type what you hear, match pairs, and a real line from a public-domain book
 unit closes with a reading passage and comprehension questions. The research behind each
 curriculum is in `content/<language>/RESEARCH.md`, and the editions used are in `SOURCES.md`.
 
+**The ? button** on every lesson screen explains the answer: the meaning and reading of each
+choice, a word-by-word breakdown of the sentence, why the right option in a fill-in-the-blank is
+right (and the others wrong), and the level's grammar point. For piano it works out where the note
+sits on the keyboard and staff, how to count an interval (with a song to remember it by), why a
+chord is major or minor, and how to count a rhythm. Looking is free, but the exercise comes back
+once at the end of the lesson so you answer it from memory.
+
+**Talk mode** (🗣 on each language's page) is for when you can't look at the screen. An English
+narrator sets the scene; you hear each new phrase twice and repeat it; then you play your part of
+a real conversation from memory, answering out loud. Speech recognition grades each answer, you
+hear the right version either way, and at the end of the level it moves on to the next one by
+itself (after two tries at a level you didn't pass, it moves on anyway). Phrases from earlier
+levels come back untaught, as spaced recall. Tap anywhere to pause; the screen stays on while it
+runs. Where speech recognition isn't available it pauses for your answer, then says it
+(Pimsleur-style, ungraded).
+
+**Difficulty climbs steadily.** `node tools/difficulty.js all` checks every track against a
+straight-line ramp: sentence, quote and passage length for the languages (with a check that
+sentences mostly use words taught earlier), notes to play for piano, and answer length for talk
+mode.
+
 **Piano exercises** — find the key, name the note on the staff, play what you hear, identify
 intervals and chords by ear, tap rhythms, sight-read phrases, echo melodies, and play whole pieces.
 Sound is synthesised with the Web Audio API and the notation is drawn as SVG, so there is nothing
@@ -78,19 +102,24 @@ js/
   storage.js          profiles and their progress in localStorage
   engine.js           lesson session: queue, hearts, XP, results
   exercises.js        every exercise renderer
-  speech.js           text-to-speech and speech recognition in the lesson's language
+  speech.js           text-to-speech, speech recognition and answer grading
+  help.js             the ? explanations
+  talk.js             talk mode: hands-free spoken dialogs
   audio.js            note maths + Web Audio piano
   staff.js            SVG music notation
   keyboard.js         on-screen piano keyboard
   screens.js          home, profiles, track path, practice, review, settings
   app.js              hash router
   tracks/lang.js      builds French, Japanese and Chinese lessons from unit data
-  tracks/french/      u01.js … u10.js: one unit (10 levels) per file
+  tracks/french/      u01.js … u10.js: one unit (10 levels) per file; talk.js: talk-mode dialogs
+  tracks/spanish/     same shape
   tracks/japanese/    same shape
   tracks/chinese/     same shape
   tracks/piano/       curriculum, pieces, level generator
-content/<language>/  SOURCES.md (editions used) and RESEARCH.md (how the curriculum is ordered)
-tools/check-content.js  checks unit shape, no repeats, and every quote verbatim against its source
+content/<language>/  SOURCES.md (editions used), RESEARCH.md (how the curriculum is ordered),
+                     TALK.md (how talk mode teaches speaking)
+tools/check-content.js  checks unit and talk shape, explanations, no repeats, quotes verbatim
+tools/difficulty.js     checks that difficulty climbs in a straight line
 tools/sync-files.js     keeps index.html and sw.js in step with the files on disk
 PLAN.md               the full project plan
 ```
@@ -100,6 +129,6 @@ is always the same lesson.
 
 ## Status
 
-All four tracks are complete and playable: 400 levels. Ideas still open —
+All five tracks are complete and playable: 500 levels, plus 160 talk-mode dialogs. Ideas still open —
 handwriting-free French accents on mobile, a two-handed grand-staff mode for piano, and per-unit
 progress badges.

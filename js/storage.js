@@ -14,6 +14,7 @@ HS.storage = (function () {
     tracks: {},         // { french: { levels: { '3': {stars, best} }, unlocked: 1 } }
     mistakes: [],       // review pool: { track, ex }
     review: {},         // spaced review: { french: { '37:2': { box, due } } }
+    talk: {},           // talk mode: { french: { unlocked: 3, levels: { '2': { best, plays } } } }
     settings: { sound: true, speechRate: 0.85, speaking: true, noSpeakUntil: 0 }
   };
 
@@ -137,6 +138,25 @@ HS.storage = (function () {
     return t.levels[n];
   }
 
+  /* ---------- talk mode ---------- */
+
+  function talk(lang) {
+    if (!state.talk) state.talk = {};
+    if (!state.talk[lang]) state.talk[lang] = { unlocked: 1, levels: {} };
+    return state.talk[lang];
+  }
+
+  /** Record a spoken level: score is 0–1. Passing (60%+) unlocks the next one. */
+  function completeTalk(lang, n, score, total) {
+    var t = talk(lang);
+    var prev = t.levels[n] || { best: 0, plays: 0 };
+    t.levels[n] = { best: Math.max(prev.best, Math.round(score * 100)), plays: prev.plays + 1 };
+    if (score >= 0.6 && n + 1 > t.unlocked) t.unlocked = Math.min(n + 1, total);
+    addXp(5 + Math.round(score * 10));
+    save();
+    return t.levels[n];
+  }
+
   function addXp(amount) {
     if (!amount) return;
     var day = HS.util.todayKey();
@@ -232,7 +252,7 @@ HS.storage = (function () {
     completeLevel: completeLevel, addXp: addXp, todayXp: todayXp,
     rememberMistake: rememberMistake, clearMistakes: clearMistakes,
     totalStars: totalStars, completedCount: completedCount, reset: reset,
-    dueReviews: dueReviews, gradeReview: gradeReview,
+    dueReviews: dueReviews, gradeReview: gradeReview, talk: talk, completeTalk: completeTalk,
     avatars: AVATARS, currentProfile: currentProfile, listProfiles: listProfiles,
     switchProfile: switchProfile, addProfile: addProfile, updateProfile: updateProfile,
     removeProfile: removeProfile, profileSummary: profileSummary
