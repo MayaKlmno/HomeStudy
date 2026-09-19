@@ -37,6 +37,24 @@ HS.exercises = (function () {
 
   function head(text) { return el('h2.q-head', { text: text }); }
   function sub(text) { return el('div.q-sub', { text: text }); }
+  function readingLine(text) { return text ? el('div.reading', { text: text }) : null; }
+
+  /** Typed and assembled answers: loose for French, and spacing/punctuation-blind for CJK. */
+  function same(got, want, loose) {
+    var a = U.normalize(got), b = U.normalize(want);
+    if (loose) { a = U.bare(a); b = U.bare(b); }
+    return a === b;
+  }
+
+  /** “Victor Hugo · Les Misérables · Tome I, Livre 2, Chapitre XIII” */
+  function sourceLine(src) {
+    if (!src) return null;
+    return el('div.attrib', {}, [
+      el('span.book', { text: src.book }),
+      src.chapter ? el('span.chapter', { text: src.chapter }) : null,
+      el('span.author', { text: src.author })
+    ]);
+  }
 
   /** Multiple choice list with 1-4 keyboard shortcuts. */
   function choiceUI(options, answer, opts) {
@@ -104,7 +122,7 @@ HS.exercises = (function () {
     if (ex.speak) {
       header.push(el('div.prompt-line', {}, [
         speakerBtn(ex.speak), speakerBtn(ex.speak, true),
-        el('div.bubble', { text: ex.question })
+        el('div.bubble', {}, [el('div', { text: ex.question }), readingLine(ex.reading)])
       ]));
       HS.speech.say(ex.speak);
     } else {
@@ -120,7 +138,7 @@ HS.exercises = (function () {
       el('div.prompt-line', {}, [speakerBtn(ex.speak), speakerBtn(ex.speak, true)])
     ];
     if (!HS.speech.available()) {
-      header.push(el('p.gloss', { text: 'No French voice found on this device — the text is shown instead: “' + ex.answer + '”' }));
+      header.push(el('p.gloss', { text: 'No ' + HS.speech.languageName() + ' voice found on this device — pick the sentence that means “' + ex.translation + '”.' }));
     }
     return withHeader(header, choiceUI(ex.options, ex.answer, { speakChoice: true }));
   };
@@ -157,11 +175,13 @@ HS.exercises = (function () {
       bank.appendChild(b);
     });
 
+    var after = el('div.gloss');
     var node = el('div', {}, [
       sub(ex.prompt),
       head(ex.question),
       answerArea,
-      bank
+      bank,
+      after
     ]);
 
     return {
@@ -169,11 +189,12 @@ HS.exercises = (function () {
       onReady: function (fn) { redraw.notify = fn; },
       canCheck: function () { return chosen.length > 0; },
       check: function () {
-        var got = chosen.map(function (c) { return c.word; }).join(' ');
-        return { correct: U.normalize(got) === U.normalize(ex.answer), solution: ex.answer };
+        var got = chosen.map(function (c) { return c.word; }).join(ex.joiner == null ? ' ' : ex.joiner);
+        return { correct: same(got, ex.answer, ex.joiner === ''), solution: ex.answer };
       },
       afterCheck: function (ok) {
-        if (ok) HS.speech.say(ex.answer);
+        if (ok) HS.speech.say(ex.speak || ex.answer);
+        if (ex.reading) after.textContent = ex.reading;
         answerArea.style.borderColor = ok ? 'var(--correct-ink)' : 'var(--wrong-ink)';
       },
       cleanup: function () {}
@@ -222,7 +243,7 @@ HS.exercises = (function () {
 
     return {
       auto: true,
-      node: el('div', {}, [sub(ex.prompt), head('Tap a French word, then its meaning'), cols]),
+      node: el('div', {}, [sub(ex.prompt), head(ex.head || 'Tap a word, then its meaning'), cols]),
       cleanup: function () {}
     };
   };
@@ -239,7 +260,7 @@ HS.exercises = (function () {
 
   var typeIn = function (ex) {
     HS.speech.say(ex.speak);
-    var input = el('textarea.type-in', { rows: 2, placeholder: 'Type in French…', spellcheck: 'false',
+    var input = el('textarea.type-in', { rows: 2, placeholder: ex.placeholder || 'Type in French…', spellcheck: 'false',
       autocapitalize: 'off', autocorrect: 'off' });
     var node = el('div', {}, [
       sub(ex.prompt),
@@ -253,7 +274,9 @@ HS.exercises = (function () {
       onReady: function (fn) { input.addEventListener('input', fn); },
       canCheck: function () { return input.value.trim().length > 0; },
       check: function () {
-        return { correct: U.normalize(input.value) === U.normalize(ex.answer), solution: ex.answer };
+        var ok = (ex.accept || [ex.answer]).some(function (a) { return same(input.value, a, ex.loose); });
+        var sol = ex.answer + (ex.accept && ex.accept.length > 1 ? ' (' + ex.accept.slice(1).join(' · ') + ')' : '');
+        return { correct: ok, solution: sol };
       },
       afterCheck: function () { input.disabled = true; },
       cleanup: function () {}
@@ -262,12 +285,27 @@ HS.exercises = (function () {
 
   function passageBlock(ex) {
     var p = el('div.passage', {}, []);
+    var body = el('div.passage-text');
     String(ex.text).split('\n').forEach(function (line, i) {
-      if (i) p.appendChild(el('br'));
-      p.appendChild(document.createTextNode(line));
+      if (i) body.appendChild(el('br'));
+      body.appendChild(document.createTextNode(line));
     });
-    p.appendChild(el('div.attrib', { text: ex.attrib }));
+    p.appendChild(body);
+    if (ex.reading) p.appendChild(readingLine(ex.reading));
+    p.appendChild(ex.source ? sourceLine(ex.source) : el('div.attrib', { text: ex.attrib }));
     return p;
+  }
+
+  /** Hidden until asked for, so the reader tries the original first. */
+  function translationToggle(text) {
+    if (!text) return null;
+    var box = el('div.translation', { text: text });
+    box.hidden = true;
+    var btn = el('button.btn.ghost.sm', { type: 'button', onclick: function () {
+      box.hidden = !box.hidden;
+      btn.textContent = box.hidden ? 'Show translation' : 'Hide translation';
+    } }, ['Show translation']);
+    return el('div', {}, [btn, box]);
   }
 
   var passage = function (ex) {
@@ -277,8 +315,8 @@ HS.exercises = (function () {
         passageBlock(ex),
         el('div.gloss', { text: ex.gloss }),
         el('div.row', {}, [el('button.btn.ghost.sm', {
-          type: 'button', onclick: function () { HS.speech.say(ex.text.replace(/\n/g, ' ')); }
-        }, ['🔊 Hear it read'])])
+          type: 'button', onclick: function () { HS.speech.say(String(ex.speak || ex.text).replace(/\n/g, ' ')); }
+        }, ['🔊 Hear it read']), translationToggle(ex.translation)])
       ]),
       free: true,                       // nothing to answer — Continue straight through
       canCheck: function () { return true; },
@@ -292,6 +330,37 @@ HS.exercises = (function () {
     return withHeader([
       passageBlock(ex),
       el('div.gloss', { text: ex.gloss }),
+      head(ex.question)
+    ], choiceUI(ex.options, ex.answer));
+  };
+
+  /** A level's new idea, before the exercises. */
+  var tip = function (ex) {
+    return {
+      node: el('div', {}, [
+        sub('New in this level'),
+        head(ex.title),
+        el('div.tip-card', { text: ex.text })
+      ]),
+      free: true,
+      canCheck: function () { return true; },
+      check: function () { return { correct: true, solution: null }; },
+      afterCheck: function () {},
+      cleanup: function () {}
+    };
+  };
+
+  /** A real line from the book, with its title and chapter, and what it means. */
+  var quote = function (ex) {
+    var gloss = el('div.gloss', { text: ex.gloss });
+    return withHeader([
+      sub(ex.prompt),
+      el('div.quote-wrap', {}, [
+        el('div.prompt-line', { style: { marginBottom: '8px' } },
+          [speakerBtn(ex.speak), speakerBtn(ex.speak, true)]),
+        passageBlock(ex)
+      ]),
+      gloss,
       head(ex.question)
     ], choiceUI(ex.options, ex.answer));
   };
@@ -496,7 +565,7 @@ HS.exercises = (function () {
 
   return {
     choice: choice, listen: listen, assemble: assemble, match: match, blank: blank,
-    type: typeIn, passage: passage, readq: readq,
+    type: typeIn, passage: passage, readq: readq, tip: tip, quote: quote,
     keypress: keypress, namenote: namenote, interval: interval, chordear: chordear,
     sequence: sequence, rhythm: rhythm
   };

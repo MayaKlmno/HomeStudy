@@ -12,7 +12,7 @@ HS.engine = (function () {
     var state = {
       hearts: HEARTS, done: 0, wrongCount: 0, answered: 0,
       started: Date.now(), current: null, renderer: null, checked: false,
-      combo: 0, bestCombo: 0
+      combo: 0, bestCombo: 0, graded: {}
     };
 
     /* ---------- chrome ---------- */
@@ -51,6 +51,7 @@ HS.engine = (function () {
 
       var ex = queue.shift();
       state.current = ex;
+      HS.speech.setLang(ex.lang || track.lang);
       bar.style.width = Math.round(state.done / Math.max(total, state.done + queue.length + 1) * 100) + '%';
 
       var renderer = HS.exercises[ex.type];
@@ -105,6 +106,12 @@ HS.engine = (function () {
       if (state.checked) return;
       state.checked = true;
       state.answered++;
+
+      var ex = state.current;
+      if (ex && ex.review && !state.graded[ex.review]) {   // only the first try counts for review
+        state.graded[ex.review] = true;
+        HS.storage.gradeReview(trackId, ex.review, ok);
+      }
 
       if (ok) {
         state.done++;
@@ -171,7 +178,7 @@ HS.engine = (function () {
           text: 'You got ' + state.done + ' right before running out. Give it another go.' })
       ]));
       footInner.appendChild(el('button.btn.primary.wide', {
-        type: 'button', onclick: function () { HS.app.go('#/lesson/' + trackId + '/' + levelN, true); }
+        type: 'button', onclick: function () { HS.app.go(opts.retry || '#/lesson/' + trackId + '/' + levelN, true); }
       }, ['Try again']));
       footInner.appendChild(el('button.btn.ghost', {
         type: 'button', onclick: function () { HS.app.go('#/track/' + trackId); }
@@ -185,7 +192,8 @@ HS.engine = (function () {
 
       if (!opts.practice) {
         HS.storage.completeLevel(trackId, levelN, {
-          accuracy: accuracy, xp: xp, totalLevels: HS.tracks[trackId].total
+          accuracy: accuracy, xp: xp, totalLevels: HS.tracks[trackId].total,
+          reviewKeys: track.reviewKeys ? track.reviewKeys(levelN) : []
         });
       } else {
         HS.storage.addXp(xp);
@@ -199,7 +207,7 @@ HS.engine = (function () {
       var stars = accuracy >= 1 ? 3 : accuracy >= 0.85 ? 2 : 1;
       body.appendChild(el('div.center', {}, [
         el('div', { style: { fontSize: '64px', margin: '26px 0 6px' } }, ['🎉']),
-        el('h2', { style: { fontSize: '28px' }, text: 'Lesson complete!' }),
+        el('h2', { style: { fontSize: '28px' }, text: opts.review ? 'Review done!' : 'Lesson complete!' }),
         el('div', { style: { fontSize: '30px', letterSpacing: '4px', margin: '10px 0' } },
           ['⭐'.repeat(stars) + '☆'.repeat(3 - stars)]),
         el('div.results', {}, [

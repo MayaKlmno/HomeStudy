@@ -1,11 +1,14 @@
-/* The screens: home, a track's level path, review practice, and settings. */
+/* The screens: home, profiles, a track's level path, review practice, and settings. */
 HS.screens = (function () {
   var el = HS.util.el;
 
   function topbar() {
     var s = HS.storage.state;
+    var me = HS.storage.currentProfile();
     return el('div.topbar', {}, [
-      el('button.brand', { type: 'button', onclick: function () { HS.app.go('#/'); } }, ['📚 HomeStudy']),
+      el('button.brand', { type: 'button', onclick: function () { HS.app.go('#/'); } }, ['📚', el('span.brand-name', { text: 'HomeStudy' })]),
+      el('button.profile-chip', { type: 'button', title: 'Switch learner',
+        onclick: function () { HS.app.go('#/profiles'); } }, [me.avatar + ' ' + me.name]),
       el('div.stat.streak', { title: 'Day streak' }, ['🔥 ' + s.streak]),
       el('div.stat.gems', { title: 'Total XP' }, ['💎 ' + s.xp]),
       el('button.icon-btn', { type: 'button', title: 'Settings',
@@ -39,9 +42,10 @@ HS.screens = (function () {
     return el('div', {}, [
       topbar(),
       el('div.page', {}, [
-        el('h1', { style: { fontSize: '26px', marginBottom: '6px' }, text: 'What are we learning today?' }),
+        el('h1', { style: { fontSize: '26px', marginBottom: '6px' },
+          text: 'Hi ' + HS.storage.currentProfile().name + ' — what are we learning today?' }),
         el('p.muted', { style: { fontWeight: '600', marginBottom: '18px' },
-          text: 'Pick a track and work down the path. Everything saves in this browser.' }),
+          text: 'Pick a track and work down the path. Progress saves on this device, per learner.' }),
 
         el('div.card', {}, [
           el('div.row', {}, [
@@ -73,6 +77,103 @@ HS.screens = (function () {
     ]);
   }
 
+  /* ---------------- profiles ---------------- */
+
+  function profiles() {
+    var list = el('div', {});
+    var editing = null;
+
+    function draw() {
+      list.innerHTML = '';
+      var all = HS.storage.listProfiles(), current = HS.storage.currentProfile().id;
+      all.forEach(function (p) {
+        list.appendChild(editing === p.id ? editRow(p, all.length) : profileRow(p, p.id === current));
+      });
+    }
+
+    function profileRow(p, isCurrent) {
+      var st = HS.storage.profileSummary(p.id);
+      return el('div.card.profile-row' + (isCurrent ? '.current' : ''), {}, [el('div.row', {}, [
+        el('button.profile-pick', { type: 'button', onclick: function () {
+          HS.storage.switchProfile(p.id);
+          markPicked();
+          HS.app.go('#/');
+        } }, [
+          el('span.avatar', { text: p.avatar }),
+          el('span', {}, [
+            el('div', { text: p.name + (isCurrent ? ' · playing now' : '') }),
+            el('div.muted', { style: { fontSize: '13px', fontWeight: '600' },
+              text: st.levels + ' levels · ' + st.xp + ' XP · 🔥 ' + st.streak })
+          ])
+        ]),
+        el('div.spacer'),
+        el('button.icon-btn', { type: 'button', title: 'Edit ' + p.name,
+          onclick: function () { editing = p.id; draw(); } }, ['✏️'])
+      ])]);
+    }
+
+    function editRow(p, count) {
+      var avatar = p.avatar;
+      var name = el('input.text-in', { type: 'text', value: p.name, maxlength: '24', 'aria-label': 'Name' });
+      var faces = el('div.avatars', {}, HS.storage.avatars.map(function (a) {
+        var b = el('button.avatar-btn' + (a === avatar ? '.sel' : ''), { type: 'button', onclick: function () {
+          avatar = a;
+          Array.prototype.forEach.call(faces.children, function (n) { n.classList.remove('sel'); });
+          b.classList.add('sel');
+        } }, [a]);
+        return b;
+      }));
+      return el('div.card', {}, [
+        name, faces,
+        el('div.row', { style: { marginTop: '12px' } }, [
+          el('button.btn.primary.sm', { type: 'button', onclick: function () {
+            HS.storage.updateProfile(p.id, { name: name.value, avatar: avatar });
+            editing = null; draw();
+          } }, ['Save']),
+          el('button.btn.ghost.sm', { type: 'button', onclick: function () { editing = null; draw(); } }, ['Cancel']),
+          el('div.spacer'),
+          count > 1 ? el('button.btn.danger.sm', { type: 'button', onclick: function () {
+            if (confirm('Delete ' + p.name + ' and all their progress? This cannot be undone.')) {
+              HS.storage.removeProfile(p.id); editing = null; draw();
+            }
+          } }, ['Delete']) : null
+        ])
+      ]);
+    }
+
+    var newName = el('input.text-in', { type: 'text', placeholder: 'Name', maxlength: '24', 'aria-label': 'New learner name' });
+    function add() {
+      if (!newName.value.trim()) { newName.focus(); return; }
+      var p = HS.storage.addProfile(newName.value);
+      HS.storage.switchProfile(p.id);
+      markPicked();
+      HS.app.go('#/');
+    }
+    newName.addEventListener('keydown', function (e) { if (e.key === 'Enter') add(); });
+
+    draw();
+    return el('div', {}, [topbar(), el('div.page', {}, [
+      el('div.row', { style: { marginBottom: '14px' } }, [
+        el('button.icon-btn', { type: 'button', onclick: function () { HS.app.go('#/'); } }, ['←']),
+        el('h1', { style: { fontSize: '24px' }, text: 'Who’s learning?' })
+      ]),
+      list,
+      el('div.card', {}, [
+        el('div', { text: 'Add a learner', style: { marginBottom: '10px' } }),
+        el('div.row', {}, [newName, el('button.btn.primary.sm', { type: 'button', onclick: add }, ['Add'])])
+      ]),
+      el('p.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '16px', lineHeight: '1.6' },
+        text: 'Each learner has their own levels, XP, streak and review words, saved on this device.' })
+    ])]);
+  }
+
+  /** With more than one learner, ask who is playing once per visit. */
+  function markPicked() { try { sessionStorage.setItem('homestudy.picked', '1'); } catch (e) {} }
+  function needsPick() {
+    if (HS.storage.listProfiles().length < 2) return false;
+    try { return !sessionStorage.getItem('homestudy.picked'); } catch (e) { return false; }
+  }
+
   /* ---------------- a track's path ---------------- */
 
   var ZIG = [0, 44, 72, 44, 0, -44, -72, -44, 0, 0];
@@ -90,12 +191,29 @@ HS.screens = (function () {
       el('span.pill', { text: HS.storage.completedCount(id) + ' / ' + t.total })
     ]));
 
+    if (t.buildReview) {
+      var due = HS.storage.dueReviews(id).length;
+      page.appendChild(el('div.card', { style: { marginBottom: '18px' } }, [el('div.row', {}, [
+        el('div', {}, [
+          el('div', { style: { fontSize: '17px' }, text: '🧠 Review' }),
+          el('div.muted', { style: { fontSize: '13px', fontWeight: '600' },
+            text: due ? due + ' word' + (due === 1 ? '' : 's') + ' due — short daily reviews make words stick'
+                      : 'Words from finished levels come back here on a spaced schedule' })
+        ]),
+        el('div.spacer'),
+        due ? el('button.btn.info.sm', { type: 'button', onclick: function () { HS.app.go('#/review/' + id); } }, ['Review']) : null
+      ])]));
+    }
+
     t.units.forEach(function (u, ui) {
       var banner = el('div.unit-banner', { style: { background: u.color } }, [
         el('div', {}, [
           el('div.u-n', { text: 'Unit ' + u.n }),
           el('h3', { text: u.title }),
-          el('div.src', { text: u.source ? u.source.author + ' · ' + u.source.title + ' (' + u.source.year + ')' : u.theme })
+          el('div.src', { text: u.source ? u.source.author + ' · ' + u.source.title +
+            (u.source.titleEn && u.source.titleEn !== u.source.title ? ' — ' + u.source.titleEn : '') +
+            (u.source.year ? ' (' + u.source.year + ')' : '') : u.theme }),
+          u.source ? el('div.src', { text: u.theme }) : null
         ])
       ]);
       page.appendChild(banner);
@@ -127,7 +245,7 @@ HS.screens = (function () {
     var label = t.title(n);
 
     var cls = 'node' + (info ? (info.stars >= 3 ? ' gold' : ' done') : unlocked ? ' current' : '');
-    var icon = info ? (info.stars >= 3 ? '👑' : '⭐') : isLast ? (id === 'french' ? '📖' : '🎵') : unlocked ? '▶' : '🔒';
+    var icon = info ? (info.stars >= 3 ? '👑' : '⭐') : isLast ? (t.readingIcon || '🎵') : unlocked ? '▶' : '🔒';
 
     var btn = el('button.' + cls.replace('node ', 'node.').replace(/ /g, '.'), {
       type: 'button', disabled: !unlocked, title: 'Level ' + n + ' — ' + label,
@@ -159,6 +277,16 @@ HS.screens = (function () {
     var exercises = HS.util.shuffle(pool.map(function (m) { return m.ex; }));
     HS.storage.clearMistakes(pool.map(function (m) { return m.sig; }));
     return HS.engine.start(trackId, 0, { exercises: exercises, practice: true });
+  }
+
+  /* ---------------- spaced review ---------------- */
+
+  function review(id) {
+    var t = HS.tracks[id];
+    var keys = t && t.buildReview ? HS.storage.dueReviews(id).slice(0, 12) : [];
+    if (!keys.length) return trackScreen(id);
+    return HS.engine.start(id, 0, { exercises: t.buildReview(keys), practice: true, review: true,
+      retry: '#/review/' + id });
   }
 
   /* ---------------- settings ---------------- */
@@ -199,7 +327,7 @@ HS.screens = (function () {
         el('h1', { style: { fontSize: '24px' }, text: 'Settings' })
       ]),
 
-      toggleRow('Sound', 'Piano notes, effects and French speech',
+      toggleRow('Sound', 'Piano notes, effects and spoken words',
         function () { return s.settings.sound; },
         function (v) { s.settings.sound = v; }),
 
@@ -210,26 +338,30 @@ HS.screens = (function () {
       ])]),
 
       el('div.card', {}, [
-        el('div', { text: 'French voice' }),
-        el('div.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '4px' },
-          text: HS.speech.available()
-            ? 'Found a French voice on this device — listening exercises will speak.'
-            : 'No French voice installed. On a Mac: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices → French.' })
+        el('div', { text: 'Voices' }),
+        el('div', { style: { fontSize: '14px', fontWeight: '600', marginTop: '6px', lineHeight: '1.8' } },
+          Object.keys(HS.tracks).filter(function (k) { return HS.tracks[k].lang; }).map(function (k) {
+            var t = HS.tracks[k];
+            return el('div', { text: t.icon + ' ' + t.name + ': ' + (HS.speech.available(t.lang) ? 'voice found ✓' : 'no voice installed') });
+          })),
+        el('div.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '6px' },
+          text: 'Missing one? iPhone: Settings → Accessibility → Spoken Content → Voices. Mac: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices.' })
       ]),
 
       el('div.card', {}, [el('div.row', {}, [
-        el('div', {}, [el('div', { text: 'Reset all progress' }),
-          el('div.muted', { style: { fontSize: '13px', fontWeight: '600' }, text: 'XP, streak and every unlocked level' })]),
+        el('div', {}, [el('div', { text: 'Reset ' + HS.storage.currentProfile().name + '’s progress' }),
+          el('div.muted', { style: { fontSize: '13px', fontWeight: '600' }, text: 'XP, streak, review words and every unlocked level — other learners are untouched' })]),
         el('div.spacer'),
         el('button.btn.danger.sm', { type: 'button', onclick: function () {
-          if (confirm('Erase all progress? This cannot be undone.')) { HS.storage.reset(); HS.app.go('#/'); }
+          if (confirm('Erase ' + HS.storage.currentProfile().name + '’s progress? This cannot be undone.')) { HS.storage.reset(); HS.app.go('#/'); }
         } }, ['Reset'])
       ])]),
 
       el('p.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '20px', lineHeight: '1.6' },
-        text: 'French course texts are public-domain works — see content/french/SOURCES.md.' })
+        text: 'Every quote comes from a public-domain book — see content/<language>/SOURCES.md.' })
     ])]);
   }
 
-  return { home: home, track: trackScreen, practice: practice, settings: settings, topbar: topbar };
+  return { home: home, profiles: profiles, needsPick: needsPick, track: trackScreen, review: review,
+           practice: practice, settings: settings, topbar: topbar };
 })();

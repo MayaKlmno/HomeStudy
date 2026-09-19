@@ -73,6 +73,9 @@ HS.util = (function () {
       .trim();
   }
 
+  /** Drop every space and punctuation mark — for Japanese and Chinese, where spacing is not part of the answer. */
+  function bare(s) { return String(s).replace(/[\s\u3000-\u303f\uff00-\uff0f\uff1a-\uff20.,!?;:'"“”‘’«»()\-]/g, ''); }
+
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
   function todayKey(d) {
@@ -91,6 +94,6 @@ HS.util = (function () {
   }
 
   return { el: el, rng: rng, shuffle: shuffle, pick: pick, sample: sample,
-           normalize: normalize, clamp: clamp, todayKey: todayKey,
+           normalize: normalize, bare: bare, clamp: clamp, todayKey: todayKey,
            daysBetween: daysBetween, mmss: mmss };
 })();

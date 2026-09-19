@@ -116,3 +116,16 @@
 .tap-pad{width:100%;height:96px;border-radius:18px;border:3px dashed var(--line);background:var(--bg-soft);
   font-size:17px;color:var(--ink-soft);cursor:pointer;}
 .tap-pad:active{background:rgba(28,176,246,.15);border-color:var(--blue);}
+
+/* ---------- language extras ---------- */
+.reading{font-size:14px;font-weight:600;color:var(--ink-soft);margin-top:4px;font-style:normal;letter-spacing:.2px;}
+.passage .passage-text{white-space:normal;}
+.passage .attrib{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 10px;}
+.passage .attrib .book{font-weight:800;color:var(--ink);font-style:italic;}
+.passage .attrib .chapter::before,.passage .attrib .author::before{content:'· ';}
+.translation{margin-top:10px;padding:12px 14px;border-radius:12px;background:var(--bg-soft);font-size:15px;font-weight:600;line-height:1.6;}
+.tip-card{
+  border:2px solid var(--line);border-left:6px solid var(--blue);border-radius:var(--radius);
+  padding:16px 18px;font-size:17px;line-height:1.65;font-weight:600;
+}
+.quote-wrap .passage{font-size:19px;}
