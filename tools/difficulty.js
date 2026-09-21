@@ -24,8 +24,8 @@ var TOL = 0.2;
 /* Straight-line targets from level 1 to level 100: [at level 1, at level 100].
    Latin-script lengths are in words; CJK sentence lengths in tiles, quote lengths in characters. */
 var TARGETS = {
-  latin: { sent: [3, 12], quote: [4, 18], passage: [45, 100], talk: [2, 10] },
-  cjk:   { sent: [3, 8],  quote: [6, 32], passage: [60, 180], talk: [2, 9] }
+  latin: { sent: [3, 12], quote: [4, 18], passage: [45, 100], talk: [2, 16] },
+  cjk:   { sent: [3, 8],  quote: [6, 32], passage: [60, 180], talk: [2, 14] }
 };
 function target(kind, metric, n) {
   var t = TARGETS[kind][metric];
@@ -153,6 +153,14 @@ function talkRows(talk, kind, flags) {
     var n = 1 + i * 99 / Math.max(1, N - 1), want = target(kind, 'talk', n);
     var avg = mean(mine.map(len));
     if (!near(avg, want, 1.5)) flags.push((i + 1) + ' (' + L.title + '): your lines average ' + avg.toFixed(1) + ', ramp wants about ' + want.toFixed(1));
+    else if (i >= 5) {
+      // No backsliding: a level must not be far easier than the five before it.
+      var before = mean(talk.levels.slice(i - 5, i).map(function (P) {
+        return mean(P.turns.filter(function (t) { return t.you; }).map(function (t) { return len(t.you); }));
+      }));
+      if (avg < before * 0.7 && before - avg > 1.5)
+        flags.push((i + 1) + ' (' + L.title + '): your lines average ' + avg.toFixed(1) + ', a big drop from ' + before.toFixed(1) + ' in levels ' + (i - 4) + '–' + i);
+    }
     var theirs = L.turns.filter(function (t) { return t.them; }).map(function (t) { return t.them; });
     return { n: i + 1, title: L.title,
       you: mean(mine.map(len)), them: mean(theirs.map(len)), turns: L.turns.length };

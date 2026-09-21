@@ -81,11 +81,15 @@ HS.talkMode = (function () {
       reading: el('div.reading'),
       en: el('div.talk-en'),
       status: el('div.talk-status'),
+      live: el('div.talk-live'),
       score: el('div.talk-score'),
       pause: el('div.talk-pausehint', { text: 'Tap anywhere to pause' })
     };
+    var meterBar = el('i');
+    var meter = el('div.talk-meter', {}, [meterBar]);
+    ui.meterBar = meterBar; ui.meter = meter;
     var stage = el('button.talk-stage', { type: 'button', onclick: function () { togglePause(); } },
-      [ui.phase, ui.who, ui.text, ui.reading, ui.en, ui.status, ui.score, ui.pause]);
+      [ui.phase, ui.who, ui.text, ui.reading, ui.en, ui.status, meter, ui.live, ui.score, ui.pause]);
     var root = el('div.talk-player', {}, [
       el('div.talk-top', {}, [
         el('button.icon-btn', { type: 'button', title: 'Stop', onclick: function () { HS.app.go('#/talk/' + id); } }, ['✕']),
@@ -109,13 +113,26 @@ HS.talkMode = (function () {
                 manual: !HS.speech.canListen(), ui: ui, root: root, stage: stage, line: null };
     wake(session);
     var s = session;
-    setTimeout(function () { runLevel(s).catch(function (e) { if (e !== STOP) console.error(e); }); }, 300);
+    setTimeout(function () {
+      micCheck(s).then(function () { return runLevel(s); })
+        .catch(function (e) { if (e !== STOP) console.error(e); });
+    }, 300);
     return root;
   }
 
   function show(s, parts) {
     if (!s || s.stopped) return;
-    Object.keys(parts).forEach(function (k) { if (s.ui[k]) s.ui[k].textContent = parts[k] || ''; });
+    Object.keys(parts).forEach(function (k) {
+      if (s.ui[k] && k !== 'meter' && k !== 'meterBar') s.ui[k].textContent = parts[k] || '';
+    });
+  }
+
+  /** The level bar and the "I can hear you" state, so you know the mic is working. */
+  function micUI(s, on, level) {
+    if (!s || s.stopped) return;
+    s.ui.meter.classList.toggle('on', !!on);
+    if (!on) { s.ui.meterBar.style.width = '0%'; s.ui.live.textContent = ''; s.ui.meter.classList.remove('hearing'); }
+    if (level !== undefined) s.ui.meterBar.style.width = Math.round(Math.min(1, level) * 100) + '%';
   }
 
   function showLine(s, who, line, hidden) {
@@ -197,24 +214,40 @@ HS.talkMode = (function () {
   }
 
   function narrate(s, text) { return speak(s, text, NARRATOR, { rate: 1 }); }
-  function pip(s) { if (!s.skip) HS.audio.note('E5', 0.12, 0, 0.08); return wait(s, 150); }
-  function chime(ok) {
-    if (ok) { HS.audio.note('C5', 0.22, 0, 0.16); HS.audio.note('G5', 0.3, 0.09, 0.14); }
-    else { HS.audio.note('A3', 0.3, 0, 0.14); HS.audio.note('D#3', 0.4, 0.04, 0.12); }
-  }
+  function chime(ok) { HS.audio.cue(ok ? 'right' : 'wrong'); }
 
+  /* Listens, and says out loud and on screen what the microphone is doing. Stops early when
+     nothing at all is coming in, and waits longer once it can hear you speaking. */
   function hear(s) {
     return gate(s).then(function () {
       if (s.skip) return { err: 'skip', alts: [] };
       return new Promise(function (resolve) {
-        var timer;
+        var silent, longest, heardVoice = false;
+        micUI(s, true, 0);
+        HS.audio.cue('listen');
         var stopFn = HS.speech.listen(s.lang, function (err, alts) {
-          clearTimeout(timer);
+          clearTimeout(silent); clearTimeout(longest);
           s.stopListen = null;
-          resolve({ err: err, alts: alts });
+          micUI(s, false);
+          HS.audio.cue('done');
+          resolve({ err: err, alts: alts, heardVoice: heardVoice });
+        }, {
+          on: function (state, info) {
+            if (state === 'ready') show(s, { status: '🎤 Listening — say it now' });
+            else if (state === 'sound') show(s, { status: 'Picking something up…' });
+            else if (state === 'voice') {
+              if (!heardVoice) { heardVoice = true; HS.audio.cue('hearing'); }
+              s.ui.meter.classList.add('hearing');
+              show(s, { status: '🎙 I can hear you' });
+              clearTimeout(silent);                       // you are talking: let you finish
+            } else if (state === 'words') { s.ui.live.textContent = info || ''; }
+            else if (state === 'quiet') show(s, { status: 'Got it — checking…' });
+          },
+          level: function (v) { micUI(s, true, v); }
         });
         s.stopListen = stopFn;
-        timer = setTimeout(stopFn, 9000);
+        silent = setTimeout(stopFn, 6000);                // nothing at all after 6s
+        longest = setTimeout(stopFn, 15000);              // hard stop
       });
     });
   }
@@ -228,7 +261,7 @@ HS.talkMode = (function () {
       return wait(s, 2500 + words * 350).then(function () { return null; });
     }
     show(s, { status: '🎤 Listening…' });
-    return pip(s).then(function () { return hear(s); }).then(function (r) {
+    return hear(s).then(function (r) {
       alive(s);
       if (s.paused) return gate(s).then(function () { return answer(s, line); });   // paused mid-answer: ask again
       if (r.err && FATAL[r.err]) {
@@ -237,8 +270,24 @@ HS.talkMode = (function () {
         return narrate(s, 'I can’t use the microphone here, so I’ll pause for you to answer, and then say the answer.')
           .then(function () { return answer(s, line); });
       }
+      if (!r.alts.length && !r.heardVoice && !s.skip) {
+        s.silentRuns = (s.silentRuns || 0) + 1;
+        show(s, { status: '✕ Didn’t hear anything' });
+        if (s.silentRuns === 2) {
+          return narrate(s, 'I still can’t hear you. Check that the app is allowed to use the microphone, and speak after the beep.')
+            .then(function () { return false; });
+        }
+        if (s.silentRuns >= 4) {                       // give up on the mic, keep the lesson going
+          s.manual = true;
+          return narrate(s, 'I’ll stop listening and just pause for your answers instead.')
+            .then(function () { return null; });
+        }
+        return false;
+      }
+      if (r.alts.length || r.heardVoice) s.silentRuns = 0;
       var g = HS.speech.grade(r.alts, targets(line), s.lang);
-      show(s, { status: r.alts.length ? (g.ok ? '✓ ' : '✕ ') + 'Heard: “' + g.heard + '”' : '✕ Didn’t hear anything' });
+      show(s, { status: r.alts.length ? (g.ok ? '✓ ' : '✕ ') + 'Heard: “' + g.heard + '”'
+                                      : '✕ I heard you, but couldn’t make out the words' });
       return !r.err && g.ok;
     });
   }
@@ -249,6 +298,34 @@ HS.talkMode = (function () {
     return s.d.levels.slice(0, n - 1).some(function (L) {
       return L.turns.some(function (t) { return t.you && norm(t.you.t) === k; });
     });
+  }
+
+  /* Before the first level: prove the microphone works, while you can still look at the screen. */
+  function micCheck(s) {
+    if (s.manual) {
+      show(s, { phase: 'No microphone here', text: 'Listen and repeat mode',
+                en: 'This browser can’t listen, so it will pause for your answer and then say it.' });
+      return narrate(s, 'This browser can’t listen to you, so I’ll pause for your answer and then say it.');
+    }
+    show(s, { phase: 'Microphone check', who: '', text: 'Say anything after the beep',
+              en: 'The bar moves when I can hear you.', status: '', reading: '', score: '' });
+    return narrate(s, 'First, a quick microphone check. After the beep, say anything at all.')
+      .then(function () { return hear(s); })
+      .then(function (r) {
+        if (s.skip || s.stopped) return;
+        if (r.alts.length || r.heardVoice) {
+          chime(true);
+          show(s, { status: r.alts.length ? '✓ I heard: “' + r.alts[0] + '”' : '✓ I can hear you' });
+          return narrate(s, 'I can hear you. Here we go.');
+        }
+        if (r.err && FATAL[r.err]) {
+          s.manual = true;
+          show(s, { status: '✕ The microphone isn’t available' });
+          return narrate(s, 'I can’t use the microphone, so I’ll pause for your answers and then say them.');
+        }
+        show(s, { status: '✕ I didn’t hear anything' });
+        return narrate(s, 'I didn’t hear anything. Check that the app is allowed to use the microphone, and speak up after the beep. I’ll keep listening as we go.');
+      });
   }
 
   function runLevel(s) {

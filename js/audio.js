@@ -123,5 +123,22 @@ HS.audio = (function () {
 
   function unlock() { ac(); }
 
-  return { note: note, chord: chord, melody: melody, click: click, unlock: unlock };
+  /* Little earcons for speaking practice, so you can follow it without looking at the screen:
+     listening has started, your voice is being picked up, listening has stopped. */
+  var CUES = {
+    listen:  [{ note: 'A4', dur: 0.12 }, { note: 'E5', dur: 0.16 }],
+    hearing: [{ note: 'B5', dur: 0.07 }],
+    done:    [{ note: 'E5', dur: 0.1 }, { note: 'A4', dur: 0.14 }],
+    right:   [{ note: 'C5', dur: 0.2 }, { note: 'G5', dur: 0.26 }],
+    wrong:   [{ note: 'A3', dur: 0.26 }, { note: 'D#3', dur: 0.3 }]
+  };
+  function cue(name) {
+    var seq = CUES[name];
+    if (!seq) return;
+    var gain = name === 'hearing' ? 0.07 : 0.15;
+    var t = 0;
+    seq.forEach(function (x) { note(x.note, x.dur, t, gain); t += x.dur * 0.75; });
+  }
+
+  return { note: note, chord: chord, melody: melody, click: click, cue: cue, unlock: unlock };
 })();

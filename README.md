@@ -12,7 +12,7 @@ A Duolingo-style learning app you can open in a browser. Five tracks, 100 levels
 - **Piano** — note reading, rhythm, intervals, chords, ear training and real pieces, played on an
   on-screen keyboard.
 
-Every language also has a **Talk mode**: 40 hands-free spoken dialogs for long drives (see below).
+Every language also has a **Talk mode**: 80 hands-free spoken dialogs for long drives (see below).
 
 No installation, no build step, no internet needed. Progress is saved in the browser, with a
 separate profile for each person who uses the device.
@@ -71,7 +71,17 @@ sits on the keyboard and staff, how to count an interval (with a song to remembe
 chord is major or minor, and how to count a rhythm. Looking is free, but the exercise comes back
 once at the end of the lesson so you answer it from memory.
 
-**Talk mode** (🗣 on each language's page) is for when you can't look at the screen. An English
+**While it listens** you can see and hear what the microphone is doing: a ring around the mic (and
+a bar in talk mode) moves with your voice, it turns green and says "I can hear you" the moment it
+picks up speech, the words appear as they are recognised, and beeps mark the start and end of
+listening. Settings has a 🎤 Test button. Talk mode also checks the microphone before the first
+level, and if it hears nothing for several answers it says so and switches to timed pauses.
+
+**Talk mode** (🗣 on each language's page) is 80 dialogs for when you can't look at the screen.
+Levels 1–40 cover survival situations (greetings, café, shopping, directions, hotel, small talk,
+plans, first stories); 41–80 go from transactions to conversation — work and study, phone calls,
+telling stories, disagreeing politely, feelings and favours, admin and complaints, culture and
+food, and long conversations ending with how you learned the language. An English
 narrator sets the scene; you hear each new phrase twice and repeat it; then you play your part of
 a real conversation from memory, answering out loud. Speech recognition grades each answer, you
 hear the right version either way, and at the end of the level it moves on to the next one by
@@ -129,6 +139,6 @@ is always the same lesson.
 
 ## Status
 
-All five tracks are complete and playable: 500 levels, plus 160 talk-mode dialogs. Ideas still open —
+All five tracks are complete and playable: 500 levels, plus 320 talk-mode dialogs. Ideas still open —
 handwriting-free French accents on mobile, a two-handed grand-staff mode for piano, and per-unit
 progress badges.

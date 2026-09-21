@@ -96,30 +96,89 @@ HS.speech = (function () {
   /**
    * Listens for one phrase. cb(err, alternatives) — err is null, 'no-speech', 'not-allowed',
    * 'network' or another SpeechRecognition error code. Returns a function that stops listening.
+   *
+   * opts.on(state, info) reports what the microphone is doing, so the screen can show it:
+   *   'ready'  — the microphone is open and listening
+   *   'sound'  — something is coming in
+   *   'voice'  — that something is speech: you are being heard
+   *   'words'  — info is the text recognised so far
+   *   'quiet'  — you stopped speaking; it is working out the answer
+   * opts.level(0–1) is the live loudness, when the browser allows a second look at the mic.
    */
-  function listen(tag, cb) {
+  function listen(tag, cb, opts) {
+    opts = opts || {};
+    var on = opts.on || function () {};
     if (!Rec) { cb('unsupported', []); return function () {}; }
     stop();
-    var rec, finished = false;
-    function end(err, alts) { if (finished) return; finished = true; cb(err, alts || []); }
+    var rec, finished = false, stopMeter = null;
+    function end(err, alts) {
+      if (finished) return;
+      finished = true;
+      if (stopMeter) stopMeter();
+      cb(err, alts || []);
+    }
     try {
       rec = new Rec();
       rec.lang = tag || lang;
-      rec.interimResults = false;
+      rec.interimResults = true;                 // so the words can be shown as they are heard
       rec.continuous = false;
       rec.maxAlternatives = 5;
+      rec.onaudiostart = function () { on('ready'); };
+      rec.onsoundstart = function () { on('sound'); };
+      rec.onspeechstart = function () { on('voice'); };
+      rec.onspeechend = function () { on('quiet'); };
       rec.onresult = function (e) {
-        var alts = [];
+        var alts = [], interim = '', final = false;
         for (var i = 0; i < e.results.length; i++) {
+          if (!e.results[i].isFinal) { interim += e.results[i][0].transcript; continue; }
+          final = true;
           for (var j = 0; j < e.results[i].length; j++) alts.push(e.results[i][j].transcript);
         }
+        if (!final) { on('words', interim); return; }
         end(null, alts);
       };
       rec.onerror = function (e) { end(e.error || 'error'); };
       rec.onend = function () { end('no-speech'); };
+      if (opts.level) stopMeter = meter(opts.level);
       rec.start();
     } catch (e) { end('error'); }
-    return function () { try { rec && rec.stop(); } catch (e) {} };
+    return function () { try { rec && rec.stop(); } catch (e) {} if (stopMeter) stopMeter(); };
+  }
+
+  /* ---------- live microphone level ---------- */
+
+  /* A second look at the microphone, only for the level bar. Some browsers (and iOS in
+     particular) may refuse it while recognition is running; then we simply go without. */
+  var meterOff = false;
+  function meterAvailable() { return !meterOff && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
+  function disableMeter() { meterOff = true; }
+
+  function meter(cb) {
+    if (!meterAvailable()) return function () {};
+    var stopped = false, timer = null, stream = null;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (st) {
+      if (stopped) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
+      stream = st;
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      var ctx = new Ctx();
+      var node = ctx.createAnalyser();
+      node.fftSize = 512;
+      ctx.createMediaStreamSource(st).connect(node);
+      var buf = new Uint8Array(node.fftSize);
+      (function tick() {
+        if (stopped) { try { ctx.close(); } catch (e) {} return; }
+        node.getByteTimeDomainData(buf);
+        var peak = 0;
+        for (var i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
+        cb(Math.min(1, peak / 45));
+        timer = setTimeout(tick, 70);
+      })();
+    }).catch(function () { meterOff = true; });
+    return function () {
+      stopped = true;
+      clearTimeout(timer);
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    };
   }
 
   /* ---------- how close was it? ---------- */
@@ -170,5 +229,6 @@ HS.speech = (function () {
 
   return { say: say, stop: stop, unlock: unlock, setLang: setLang, available: available,
            languageName: languageName, canListen: canListen, listen: listen,
+           meterAvailable: meterAvailable, disableMeter: disableMeter,
            closeness: closeness, grade: grade };
 })();

@@ -379,6 +379,46 @@ HS.screens = (function () {
           text: 'Says “played” but you hear nothing? On iPhone, turn up the volume and check the silent switch. Missing a voice? iPhone: Settings → Accessibility → Spoken Content → Voices. Mac: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices. Speaking exercises on iPhone also need Settings → General → Keyboard → Enable Dictation.' })
       ]),
 
+      (function () {
+        var out = el('div.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '8px' },
+          text: HS.speech.canListen() ? 'Tap test, then say anything.' : 'This browser can’t listen, so speaking exercises pause for your answer instead.' });
+        var bar = el('i');
+        var meter = el('div.talk-meter', { style: { marginTop: '8px', width: '100%' } }, [bar]);
+        var stopFn = null;
+        return el('div.card', {}, [
+          el('div.row', {}, [
+            el('div', {}, [el('div', { text: 'Microphone' }),
+              el('div.muted', { style: { fontSize: '13px', fontWeight: '600' }, text: 'For speaking exercises and talk mode' })]),
+            el('div.spacer'),
+            HS.speech.canListen() ? el('button.btn.ghost.sm', { type: 'button', onclick: function () {
+              if (stopFn) { stopFn(); return; }
+              HS.audio.unlock();
+              HS.audio.cue('listen');
+              meter.classList.add('on');
+              out.textContent = 'Listening — say anything…';
+              stopFn = HS.speech.listen(HS.speech.canListen() ? 'en-US' : '', function (err, alts) {
+                stopFn = null;
+                meter.classList.remove('on', 'hearing');
+                bar.style.width = '0%';
+                HS.audio.cue('done');
+                out.textContent = alts && alts.length ? 'Heard: “' + alts[0] + '” — the microphone works ✓'
+                  : err === 'not-allowed' || err === 'service-not-allowed'
+                    ? 'Blocked. On iPhone: allow the microphone for this site, and turn on Settings → General → Keyboard → Enable Dictation.'
+                    : err === 'network' ? 'Speech recognition needs an internet connection in this browser.'
+                    : 'Didn’t hear anything — check the microphone and try again.';
+              }, {
+                on: function (state, info) {
+                  if (state === 'voice') { meter.classList.add('hearing'); out.textContent = '🎙 I can hear you'; }
+                  else if (state === 'words') out.textContent = '“' + info + '”';
+                },
+                level: function (v) { bar.style.width = Math.round(v * 100) + '%'; }
+              });
+            } }, ['🎤 Test']) : null
+          ]),
+          meter, out
+        ]);
+      })(),
+
       el('div.card', {}, [el('div.row', {}, [
         el('div', {}, [el('div', { text: 'Reset ' + HS.storage.currentProfile().name + '’s progress' }),
           el('div.muted', { style: { fontSize: '13px', fontWeight: '600' }, text: 'XP, streak, review words and every unlocked level — other learners are untouched' })]),

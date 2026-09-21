@@ -370,9 +370,12 @@ HS.exercises = (function () {
 
   var speak = function (ex, ctx) {
     var tag = ex.lang || 'fr-FR';
-    var tries = 0, stopFn = null;
+    var tries = 0, stopFn = null, heardVoice = false;
     var status = el('div.speak-status');
-    var mic = el('button.mic', { type: 'button', onclick: toggle }, [el('span.mic-icon', { text: '🎤' }), el('span.mic-label', { text: 'Tap and speak' })]);
+    var ring = el('span.mic-ring');                       // grows with how loud you are
+    var live = el('div.speak-live');                      // the words as they are recognised
+    var mic = el('button.mic', { type: 'button', onclick: toggle },
+      [ring, el('span.mic-icon', { text: '🎤' }), el('span.mic-label', { text: 'Tap and speak' })]);
     var said = el('button.btn.ghost.sm', { type: 'button', onclick: function () { ctx.skip(); } }, ['I said it — continue']);
     var cant = el('button.link-btn', { type: 'button', onclick: function () {
       HS.storage.state.settings.noSpeakUntil = Date.now() + 60 * 60 * 1000;
@@ -390,18 +393,36 @@ HS.exercises = (function () {
 
     function setListening(on) {
       mic.classList.toggle('on', on);
-      mic.querySelector('.mic-label').textContent = on ? 'Listening… tap to stop' : (tries ? 'Try again' : 'Tap and speak');
+      mic.querySelector('.mic-label').textContent = on ? 'Listening…' : (tries ? 'Try again' : 'Tap and speak');
+      if (!on) { mic.classList.remove('hearing'); ring.style.transform = ''; live.textContent = ''; }
+    }
+
+    /* What the microphone is doing, in words, in sound, and in the ring around the mic. */
+    function micState(state, info) {
+      if (state === 'ready') { status.className = 'speak-status'; status.textContent = 'Listening — say it now'; }
+      else if (state === 'sound') { status.textContent = 'Picking something up…'; }
+      else if (state === 'voice') {
+        if (!heardVoice) { heardVoice = true; HS.audio.cue('hearing'); }
+        mic.classList.add('hearing');
+        status.className = 'speak-status good';
+        status.textContent = '🎙 I can hear you';
+      } else if (state === 'words') { live.textContent = info || ''; }
+      else if (state === 'quiet') { status.className = 'speak-status'; status.textContent = 'Got it — checking…'; }
     }
 
     function toggle() {
       if (stopFn) { stopFn(); return; }
       HS.speech.unlock();
+      HS.audio.unlock();
       status.textContent = '';
       status.className = 'speak-status';
+      heardVoice = false;
       setListening(true);
+      HS.audio.cue('listen');
       stopFn = HS.speech.listen(tag, function (err, alts) {
         stopFn = null;
         setListening(false);
+        HS.audio.cue('done');
         if (err && err !== 'no-speech') {
           said.hidden = false;
           mic.hidden = true;
@@ -412,7 +433,13 @@ HS.exercises = (function () {
               : 'Couldn’t listen (' + err + '). Say it out loud and tap “I said it”.';
           return;
         }
-        if (!alts.length) { status.textContent = 'I didn’t hear anything — tap the mic and speak a little louder.'; return; }
+        if (!alts.length) {
+          status.className = 'speak-status bad';
+          status.textContent = heardVoice
+            ? 'I heard you, but couldn’t make out the words — tap the mic and try again, a little slower.'
+            : 'I didn’t hear anything. Check the microphone is allowed and speak up — the ring around the mic moves when it hears you.';
+          return;
+        }
         tries++;
         var best = HS.speech.grade(alts, ex.targets, tag);
         if (best.ok) {
@@ -424,6 +451,12 @@ HS.exercises = (function () {
         status.className = 'speak-status bad';
         status.textContent = 'I heard: “' + best.heard + '”. Listen once more and try again.';
         if (tries >= 3) said.hidden = false;     // don't let a fussy recogniser block the lesson
+      }, {
+        on: micState,
+        level: function (v) {
+          ring.style.transform = 'scale(' + (1 + v * 0.55).toFixed(2) + ')';
+          ring.style.opacity = (0.25 + v * 0.75).toFixed(2);
+        }
       });
     }
 
@@ -436,7 +469,7 @@ HS.exercises = (function () {
           el('div.bubble', {}, [el('div', { text: ex.text }), readingLine(ex.reading)])
         ]),
         el('div.gloss', { text: ex.translation }),
-        el('div.speak-box', {}, [mic, status, said, cant])
+        el('div.speak-box', {}, [mic, status, live, said, cant])
       ]),
       cleanup: function () { if (stopFn) stopFn(); }
     };
