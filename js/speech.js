@@ -90,12 +90,25 @@ HS.speech = (function () {
   /* ---------- listening to the learner ---------- */
 
   var Rec = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  var active = null;                  // the listen() in progress, so nothing else grabs the mic
 
   function canListen() { return !!Rec; }
 
+  /** Ends any listening in progress. Anything that wants the microphone calls this first. */
+  function stopListening() {
+    var f = active;
+    active = null;
+    if (f) { try { f(); } catch (e) {} }
+  }
+
   /**
-   * Listens for one phrase. cb(err, alternatives) — err is null, 'no-speech', 'not-allowed',
-   * 'network' or another SpeechRecognition error code. Returns a function that stops listening.
+   * Listens for one phrase. cb(err, alternatives, info):
+   *   err   — null, 'no-speech', 'not-allowed', 'service-not-allowed', 'network', 'unsupported'
+   *           or another SpeechRecognition error code.
+   *   info  — what the microphone actually did: { audio, sound, voice }. `audio` false means the
+   *           recogniser never even opened the microphone, which is a different problem from you
+   *           being too quiet, and worth saying so.
+   * Returns a function that stops listening.
    *
    * opts.on(state, info) reports what the microphone is doing, so the screen can show it:
    *   'ready'  — the microphone is open and listening
@@ -103,19 +116,29 @@ HS.speech = (function () {
    *   'voice'  — that something is speech: you are being heard
    *   'words'  — info is the text recognised so far
    *   'quiet'  — you stopped speaking; it is working out the answer
-   * opts.level(0–1) is the live loudness, when the browser allows a second look at the mic.
+   * opts.level(0–1) drives a level bar or a ring, from those same events — see pulse().
    */
   function listen(tag, cb, opts) {
     opts = opts || {};
     var on = opts.on || function () {};
-    if (!Rec) { cb('unsupported', []); return function () {}; }
+    var seen = { audio: false, sound: false, voice: false };
+    if (!Rec) { cb('unsupported', [], seen); return function () {}; }
     stop();
-    var rec, finished = false, stopMeter = null;
+    stopListening();                  // two recognisers at once get nothing between them
+    var rec, finished = false, bar = pulse(opts.level);
     function end(err, alts) {
       if (finished) return;
       finished = true;
-      if (stopMeter) stopMeter();
-      cb(err, alts || []);
+      if (active === halt) active = null;
+      bar.stop();
+      cb(err, alts || [], seen);
+    }
+    function halt() { try { rec && rec.stop(); } catch (e) {} }
+    function state(name, level) {
+      if (name === 'audio') seen.audio = true;
+      if (name === 'sound') seen.sound = seen.audio = true;
+      if (name === 'voice') seen.voice = seen.sound = seen.audio = true;
+      bar.to(level);
     }
     try {
       rec = new Rec();
@@ -123,10 +146,10 @@ HS.speech = (function () {
       rec.interimResults = true;                 // so the words can be shown as they are heard
       rec.continuous = false;
       rec.maxAlternatives = 5;
-      rec.onaudiostart = function () { on('ready'); };
-      rec.onsoundstart = function () { on('sound'); };
-      rec.onspeechstart = function () { on('voice'); };
-      rec.onspeechend = function () { on('quiet'); };
+      rec.onaudiostart = function () { state('audio', 0.1); on('ready'); };
+      rec.onsoundstart = function () { state('sound', 0.45); on('sound'); };
+      rec.onspeechstart = function () { state('voice', 0.85); on('voice'); };
+      rec.onspeechend = function () { bar.to(0.12); on('quiet'); };
       rec.onresult = function (e) {
         var alts = [], interim = '', final = false;
         for (var i = 0; i < e.results.length; i++) {
@@ -134,51 +157,100 @@ HS.speech = (function () {
           final = true;
           for (var j = 0; j < e.results[i].length; j++) alts.push(e.results[i][j].transcript);
         }
-        if (!final) { on('words', interim); return; }
+        if (!final) {
+          state('voice', 0.9);                   // words are coming in, so it is hearing you
+          on('words', interim);
+          return;
+        }
         end(null, alts);
       };
       rec.onerror = function (e) { end(e.error || 'error'); };
       rec.onend = function () { end('no-speech'); };
-      if (opts.level) stopMeter = meter(opts.level);
       rec.start();
+      active = halt;
+      on('ready');                               // some browsers never fire onaudiostart
     } catch (e) { end('error'); }
-    return function () { try { rec && rec.stop(); } catch (e) {} if (stopMeter) stopMeter(); };
+    return halt;
   }
 
-  /* ---------- live microphone level ---------- */
+  /* ---------- the level shown while listening ---------- */
 
-  /* A second look at the microphone, only for the level bar. Some browsers (and iOS in
-     particular) may refuse it while recognition is running; then we simply go without. */
-  var meterOff = false;
-  function meterAvailable() { return !meterOff && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
-  function disableMeter() { meterOff = true; }
-
-  function meter(cb) {
-    if (!meterAvailable()) return function () {};
-    var stopped = false, timer = null, stream = null;
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (st) {
-      if (stopped) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
-      stream = st;
-      var Ctx = window.AudioContext || window.webkitAudioContext;
-      var ctx = new Ctx();
-      var node = ctx.createAnalyser();
-      node.fftSize = 512;
-      ctx.createMediaStreamSource(st).connect(node);
-      var buf = new Uint8Array(node.fftSize);
-      (function tick() {
-        if (stopped) { try { ctx.close(); } catch (e) {} return; }
-        node.getByteTimeDomainData(buf);
-        var peak = 0;
-        for (var i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
-        cb(Math.min(1, peak / 45));
-        timer = setTimeout(tick, 70);
-      })();
-    }).catch(function () { meterOff = true; });
-    return function () {
-      stopped = true;
-      clearTimeout(timer);
-      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+  /* This used to open a second microphone stream to measure how loud you were. It looked good
+     and it lied: on most systems — iPhone and iPad above all — a stream opened by the page takes
+     the microphone away from the recogniser, so the ring danced to your voice while recognition
+     heard pure silence and reported "I didn't hear anything". The level now comes from the
+     recogniser's own events, so when it moves, you really are being heard. */
+  function pulse(level) {
+    if (!level) return { to: function () {}, stop: function () {} };
+    var t = 0, amp = 0, target = 0, timer = null;
+    function emit() {
+      t++;
+      level(Math.max(0, Math.min(1, amp * (0.62 + 0.38 * Math.sin(t / 2.2)))));
+    }
+    (function tick() {
+      /* Rises fast, so being heard shows at once; falls slowly, so it doesn't flicker. */
+      amp += (target - amp) * (target > amp ? 0.55 : 0.2);
+      emit();
+      timer = setTimeout(tick, 70);
+    })();
+    return {
+      to: function (v) {
+        target = v;
+        if (v > amp) { amp += (v - amp) * 0.6; emit(); }   // felt the instant you are heard
+      },
+      stop: function () { clearTimeout(timer); target = amp = 0; level(0); }
     };
+  }
+
+  /* ---------- is the microphone working at all? ---------- */
+
+  /**
+   * Opens the microphone on its own for a moment and reports the loudest thing it heard:
+   * { ok, peak, err } where err is null, 'blocked', 'none', 'busy', 'unsupported' or 'error'.
+   * This tells a blocked or muted microphone apart from one that works while speech
+   * recognition fails. Never call it while listen() is running — that is the very clash the
+   * level bar above was causing.
+   */
+  function probe(opts) {
+    opts = opts || {};
+    var ms = opts.ms || 2500, onLevel = opts.level || function () {};
+    stopListening();                  // the whole point is to have the microphone to ourselves
+    var md = navigator.mediaDevices;
+    if (!md || !md.getUserMedia) return Promise.resolve({ ok: false, peak: 0, err: 'unsupported' });
+    return md.getUserMedia({ audio: true }).then(function (st) {
+      return new Promise(function (resolve) {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        var ctx = new Ctx(), peak = 0, timer = null, until = Date.now() + ms;
+        if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+        var node = ctx.createAnalyser();
+        node.fftSize = 512;
+        ctx.createMediaStreamSource(st).connect(node);
+        var buf = new Uint8Array(node.fftSize);
+        function finish() {
+          clearTimeout(timer);
+          try { ctx.close(); } catch (e) {}
+          st.getTracks().forEach(function (t) { t.stop(); });
+          onLevel(0);
+          resolve({ ok: peak > 0.08, peak: peak, err: null });
+        }
+        (function tick() {
+          node.getByteTimeDomainData(buf);
+          var top = 0;
+          for (var i = 0; i < buf.length; i++) top = Math.max(top, Math.abs(buf[i] - 128));
+          var v = Math.min(1, top / 45);
+          peak = Math.max(peak, v);
+          onLevel(v);
+          if (Date.now() >= until) return finish();
+          timer = setTimeout(tick, 70);
+        })();
+      });
+    }).catch(function (e) {
+      var n = e && e.name;
+      return { ok: false, peak: 0,
+        err: n === 'NotAllowedError' || n === 'SecurityError' ? 'blocked'
+           : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'none'
+           : n === 'NotReadableError' || n === 'AbortError' ? 'busy' : 'error' };
+    });
   }
 
   /* ---------- how close was it? ---------- */
@@ -229,6 +301,6 @@ HS.speech = (function () {
 
   return { say: say, stop: stop, unlock: unlock, setLang: setLang, available: available,
            languageName: languageName, canListen: canListen, listen: listen,
-           meterAvailable: meterAvailable, disableMeter: disableMeter,
+           stopListening: stopListening, probe: probe,
            closeness: closeness, grade: grade };
 })();

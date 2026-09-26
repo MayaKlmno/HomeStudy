@@ -48,3 +48,19 @@
 .res-box.acc{border-color:var(--green);} .res-box.acc .v{color:var(--green-dark);}
 .res-box.time{border-color:var(--blue);} .res-box.time .v{color:var(--blue-dark);}
 .res-box.combo{border-color:var(--purple);} .res-box.combo .v{color:var(--purple-dark);}
+
+/* "How do I switch the microphone on here?" — shown only when the app can't hear you. */
+.mic-help{
+  margin-top:14px;padding:14px 16px;border:2px solid var(--line);border-radius:14px;
+  background:var(--bg-soft);text-align:left;max-width:520px;
+}
+.mic-help-head{font-weight:800;line-height:1.4;margin-bottom:8px;}
+.mic-help-steps{margin:0 0 6px;padding-left:22px;}
+.mic-help-steps li{font-size:14px;font-weight:600;line-height:1.55;margin-bottom:8px;}
+.mic-help-notes p{margin:6px 0 0;font-size:13px;font-weight:600;line-height:1.5;color:var(--ink-soft);}
+.mic-help-test{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
+.mic-help-out{font-size:13px;font-weight:600;line-height:1.5;color:var(--ink-soft);}
+.speak-help{width:100%;display:flex;justify-content:center;}
+/* Talk mode is hands-free, so the steps must not push the player off the screen. */
+.talk-help{padding:0 16px 8px;display:flex;justify-content:center;flex:0 1 auto;min-height:0;}
+.talk-help .mic-help{max-height:40vh;overflow-y:auto;margin-top:8px;}

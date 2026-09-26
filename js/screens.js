@@ -376,19 +376,33 @@ HS.screens = (function () {
             ]);
           })),
         el('div.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '6px', lineHeight: '1.5' },
-          text: 'Says “played” but you hear nothing? On iPhone, turn up the volume and check the silent switch. Missing a voice? iPhone: Settings → Accessibility → Spoken Content → Voices. Mac: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices. Speaking exercises on iPhone also need Settings → General → Keyboard → Enable Dictation.' })
+          text: 'On your ' + HS.platform.deviceName() + ': ' + HS.platform.voiceHint() })
       ]),
 
       (function () {
         var out = el('div.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '8px' },
-          text: HS.speech.canListen() ? 'Tap test, then say anything.' : 'This browser can’t listen, so speaking exercises pause for your answer instead.' });
+          text: HS.speech.canListen() ? 'Tap test, then say anything.'
+            : HS.platform.browserName() + ' can’t turn speech into words, so speaking exercises pause for your answer instead.' });
         var bar = el('i');
         var meter = el('div.talk-meter', { style: { marginTop: '8px', width: '100%' } }, [bar]);
+        var help = el('div.speak-help');
         var stopFn = null;
+
+        var helpFor = null;
+        function showHelp(opts) {
+          var kind = (opts && opts.words) ? 'words' : 'permission';
+          if (helpFor === kind) return;
+          helpFor = kind;
+          help.textContent = '';
+          help.appendChild(HS.platform.micHelpNode({ test: true, words: kind === 'words' }));
+        }
+        if (!HS.speech.canListen()) showHelp({ words: true });
+
         return el('div.card', {}, [
           el('div.row', {}, [
             el('div', {}, [el('div', { text: 'Microphone' }),
-              el('div.muted', { style: { fontSize: '13px', fontWeight: '600' }, text: 'For speaking exercises and talk mode' })]),
+              el('div.muted', { style: { fontSize: '13px', fontWeight: '600' },
+                text: 'For speaking exercises and talk mode · ' + HS.platform.label() })]),
             el('div.spacer'),
             HS.speech.canListen() ? el('button.btn.ghost.sm', { type: 'button', onclick: function () {
               if (stopFn) { stopFn(); return; }
@@ -396,16 +410,26 @@ HS.screens = (function () {
               HS.audio.cue('listen');
               meter.classList.add('on');
               out.textContent = 'Listening — say anything…';
-              stopFn = HS.speech.listen(HS.speech.canListen() ? 'en-US' : '', function (err, alts) {
+              stopFn = HS.speech.listen('en-US', function (err, alts, seen) {
                 stopFn = null;
                 meter.classList.remove('on', 'hearing');
                 bar.style.width = '0%';
                 HS.audio.cue('done');
-                out.textContent = alts && alts.length ? 'Heard: “' + alts[0] + '” — the microphone works ✓'
-                  : err === 'not-allowed' || err === 'service-not-allowed'
-                    ? 'Blocked. On iPhone: allow the microphone for this site, and turn on Settings → General → Keyboard → Enable Dictation.'
-                    : err === 'network' ? 'Speech recognition needs an internet connection in this browser.'
-                    : 'Didn’t hear anything — check the microphone and try again.';
+                seen = seen || {};
+                if (alts && alts.length) {
+                  out.textContent = 'Heard: “' + alts[0] + '” — the microphone works ✓';
+                  return;
+                }
+                out.textContent = err === 'not-allowed' || err === 'service-not-allowed'
+                    ? 'Blocked ✕ — the microphone isn’t allowed here.'
+                  : err === 'network'
+                    ? 'Speech recognition needs an internet connection in ' + HS.platform.browserName() + '.'
+                  : seen.voice
+                    ? 'Heard you, but couldn’t make out any words — try again a little slower.'
+                  : !seen.audio
+                    ? 'The microphone never opened ✕ — something else may be using it.'
+                  : 'Didn’t hear anything ✕.';
+                showHelp({ words: seen.voice || err === 'network' });
               }, {
                 on: function (state, info) {
                   if (state === 'voice') { meter.classList.add('hearing'); out.textContent = '🎙 I can hear you'; }
@@ -415,7 +439,10 @@ HS.screens = (function () {
               });
             } }, ['🎤 Test']) : null
           ]),
-          meter, out
+          meter, out,
+          el('button.link-btn', { type: 'button', style: { marginTop: '10px' },
+            onclick: function () { showHelp(); } }, ['Microphone not working? Show the steps for my ' + HS.platform.deviceName()]),
+          help
         ]);
       })(),
 

@@ -42,6 +42,14 @@ speech recognition (on iPhone: Settings → General → Keyboard → Enable Dict
 leniently. Where recognition isn't available it becomes "say it aloud, then tap I said it". Turn
 it off in Settings, or tap "Can't speak now" to skip it for an hour.
 
+When it can't hear you, the app works out which device and browser you're on and shows the steps
+for that one — iPhone, iPad, Android, Mac, Windows, Chromebook, and installed-as-an-app versus in
+the browser — with the step that matches the symptom first. It also separates the two very
+different reasons: the microphone never opened (permission, or something else is using it), or the
+microphone works and only the words are missing (on iPhone and Mac, almost always Dictation being
+off). `🎤 Check the microphone` in that panel watches the input level without using recognition at
+all, which tells the two apart.
+
 ## Install on a phone
 
 HomeStudy is a Progressive Web App, served from GitHub Pages at
@@ -72,10 +80,14 @@ chord is major or minor, and how to count a rhythm. Looking is free, but the exe
 once at the end of the lesson so you answer it from memory.
 
 **While it listens** you can see and hear what the microphone is doing: a ring around the mic (and
-a bar in talk mode) moves with your voice, it turns green and says "I can hear you" the moment it
-picks up speech, the words appear as they are recognised, and beeps mark the start and end of
-listening. Settings has a 🎤 Test button. Talk mode also checks the microphone before the first
-level, and if it hears nothing for several answers it says so and switches to timed pauses.
+a bar in talk mode) grows when the recogniser picks you up, it turns green and says "I can hear
+you" the moment it hears speech, the words appear as they are recognised, and beeps mark the start
+and end of listening. That feedback comes from the recogniser's own events, not from a second
+microphone stream — opening one takes the microphone away from the recogniser on most systems
+(iPhone above all), which used to make the ring dance to your voice while recognition heard pure
+silence. Settings has a 🎤 Test button and the steps for your device. Talk mode also checks the
+microphone before the first level, reads out the fix for your device if it hears nothing, and after
+several silent answers switches to timed pauses so the drive isn't wasted.
 
 **Talk mode** (🗣 on each language's page) is 80 dialogs for when you can't look at the screen.
 Levels 1–40 cover survival situations (greetings, café, shopping, directions, hotel, small talk,
@@ -109,6 +121,7 @@ sw.js                 service worker: offline cache
 styles/               base, layout, components, lesson
 js/
   util.js             DOM helpers, seeded RNG, text normalising
+  platform.js         which device/browser this is, and how to allow the mic there
   storage.js          profiles and their progress in localStorage
   engine.js           lesson session: queue, hearts, XP, results
   exercises.js        every exercise renderer
@@ -129,6 +142,7 @@ js/
 content/<language>/  SOURCES.md (editions used), RESEARCH.md (how the curriculum is ordered),
                      TALK.md (how talk mode teaches speaking)
 tools/check-content.js  checks unit and talk shape, explanations, no repeats, quotes verbatim
+tools/check-speech.js   checks listening against a fake recogniser (no browser needed)
 tools/difficulty.js     checks that difficulty climbs in a straight line
 tools/sync-files.js     keeps index.html and sw.js in step with the files on disk
 PLAN.md               the full project plan

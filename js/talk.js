@@ -83,7 +83,8 @@ HS.talkMode = (function () {
       status: el('div.talk-status'),
       live: el('div.talk-live'),
       score: el('div.talk-score'),
-      pause: el('div.talk-pausehint', { text: 'Tap anywhere to pause' })
+      pause: el('div.talk-pausehint', { text: 'Tap anywhere to pause' }),
+      help: el('div.talk-help', { hidden: true })
     };
     var meterBar = el('i');
     var meter = el('div.talk-meter', {}, [meterBar]);
@@ -103,6 +104,7 @@ HS.talkMode = (function () {
         } }, ['?'])
       ]),
       stage,
+      ui.help,
       el('div.talk-foot', {}, [
         el('button.btn.ghost.sm', { type: 'button', onclick: function () { skipLevel(); } }, ['Skip level ⏭'])
       ])
@@ -120,11 +122,24 @@ HS.talkMode = (function () {
     return root;
   }
 
+  var SKIP_KEYS = { meter: 1, meterBar: 1, help: 1 };
   function show(s, parts) {
     if (!s || s.stopped) return;
     Object.keys(parts).forEach(function (k) {
-      if (s.ui[k] && k !== 'meter' && k !== 'meterBar') s.ui[k].textContent = parts[k] || '';
+      if (s.ui[k] && !SKIP_KEYS[k]) s.ui[k].textContent = parts[k] || '';
     });
+  }
+
+  /* The steps for this exact phone or laptop, once it is clear the microphone isn't working.
+     No buttons in it: the whole stage above is a pause button. */
+  function showMicHelp(s, opts) {
+    if (!s || s.stopped) return;
+    var kind = (opts && opts.words) ? 'words' : 'permission';
+    if (s.helpShown === kind) return;
+    s.helpShown = kind;
+    s.ui.help.textContent = '';
+    s.ui.help.appendChild(HS.platform.micHelpNode({ test: false, words: kind === 'words' }));
+    s.ui.help.hidden = false;
   }
 
   /** The level bar and the "I can hear you" state, so you know the mic is working. */
@@ -220,17 +235,17 @@ HS.talkMode = (function () {
      nothing at all is coming in, and waits longer once it can hear you speaking. */
   function hear(s) {
     return gate(s).then(function () {
-      if (s.skip) return { err: 'skip', alts: [] };
+      if (s.skip) return { err: 'skip', alts: [], seen: {} };
       return new Promise(function (resolve) {
         var silent, longest, heardVoice = false;
         micUI(s, true, 0);
         HS.audio.cue('listen');
-        var stopFn = HS.speech.listen(s.lang, function (err, alts) {
+        var stopFn = HS.speech.listen(s.lang, function (err, alts, seen) {
           clearTimeout(silent); clearTimeout(longest);
           s.stopListen = null;
           micUI(s, false);
           HS.audio.cue('done');
-          resolve({ err: err, alts: alts, heardVoice: heardVoice });
+          resolve({ err: err, alts: alts, heardVoice: heardVoice || (seen && seen.voice), seen: seen || {} });
         }, {
           on: function (state, info) {
             if (state === 'ready') show(s, { status: '🎤 Listening — say it now' });
@@ -267,14 +282,19 @@ HS.talkMode = (function () {
       if (r.err && FATAL[r.err]) {
         s.manual = true;
         show(s, { status: '' });
-        return narrate(s, 'I can’t use the microphone here, so I’ll pause for you to answer, and then say the answer.')
+        showMicHelp(s);
+        return narrate(s, 'I can’t use the microphone here, so I’ll pause for you to answer, and then say the answer. ' + HS.platform.micHint())
           .then(function () { return answer(s, line); });
       }
       if (!r.alts.length && !r.heardVoice && !s.skip) {
         s.silentRuns = (s.silentRuns || 0) + 1;
-        show(s, { status: '✕ Didn’t hear anything' });
-        if (s.silentRuns === 2) {
-          return narrate(s, 'I still can’t hear you. Check that the app is allowed to use the microphone, and speak after the beep.')
+        var dead = !r.seen.audio;                      // the recogniser never even got the mic
+        show(s, { status: dead ? '✕ The microphone never opened' : '✕ Didn’t hear anything' });
+        if (s.silentRuns === 2 || dead) {
+          showMicHelp(s);
+          return narrate(s, dead
+            ? 'The microphone didn’t open. Something else may be using it. ' + HS.platform.micHint() + ' The steps are on the screen.'
+            : 'I still can’t hear you. ' + HS.platform.micHint() + ' The steps are on the screen. Speak up after the beep.')
             .then(function () { return false; });
         }
         if (s.silentRuns >= 4) {                       // give up on the mic, keep the lesson going
@@ -304,8 +324,9 @@ HS.talkMode = (function () {
   function micCheck(s) {
     if (s.manual) {
       show(s, { phase: 'No microphone here', text: 'Listen and repeat mode',
-                en: 'This browser can’t listen, so it will pause for your answer and then say it.' });
-      return narrate(s, 'This browser can’t listen to you, so I’ll pause for your answer and then say it.');
+                en: HS.platform.browserName() + ' can’t listen, so it will pause for your answer and then say it.' });
+      showMicHelp(s);
+      return narrate(s, HS.platform.browserName() + ' can’t listen to you, so I’ll pause for your answer and then say it.');
     }
     show(s, { phase: 'Microphone check', who: '', text: 'Say anything after the beep',
               en: 'The bar moves when I can hear you.', status: '', reading: '', score: '' });
@@ -318,13 +339,20 @@ HS.talkMode = (function () {
           show(s, { status: r.alts.length ? '✓ I heard: “' + r.alts[0] + '”' : '✓ I can hear you' });
           return narrate(s, 'I can hear you. Here we go.');
         }
+        showMicHelp(s, { words: r.err === 'network' || r.err === 'unsupported' });
         if (r.err && FATAL[r.err]) {
           s.manual = true;
           show(s, { status: '✕ The microphone isn’t available' });
-          return narrate(s, 'I can’t use the microphone, so I’ll pause for your answers and then say them.');
+          return narrate(s, 'I can’t use the microphone, so I’ll pause for your answers and then say them. ' + HS.platform.micHint());
+        }
+        if (!r.seen.audio) {
+          show(s, { status: '✕ The microphone never opened' });
+          return narrate(s, 'The microphone didn’t open at all. Something else may be using it. ' + HS.platform.micHint()
+            + ' I’ve put the steps for your ' + HS.platform.deviceName() + ' on the screen, and I’ll keep listening as we go.');
         }
         show(s, { status: '✕ I didn’t hear anything' });
-        return narrate(s, 'I didn’t hear anything. Check that the app is allowed to use the microphone, and speak up after the beep. I’ll keep listening as we go.');
+        return narrate(s, 'I didn’t hear anything. ' + HS.platform.micHint()
+          + ' I’ve put the steps for your ' + HS.platform.deviceName() + ' on the screen. I’ll keep listening as we go.');
       });
   }
 

@@ -11,7 +11,7 @@ var root = path.join(__dirname, '..');
 var skipAt = process.argv.indexOf('--without');
 var skip = skipAt > 0 ? process.argv[skipAt + 1].split(',') : [];
 
-var CORE = ['util', 'storage', 'speech', 'audio', 'staff', 'keyboard'];
+var CORE = ['util', 'platform', 'storage', 'speech', 'audio', 'staff', 'keyboard'];
 // Every language folder with a track.js, in a fixed order first, then any others alphabetically.
 var ORDER = ['french', 'spanish', 'japanese', 'chinese'];
 var LANGS = fs.readdirSync(path.join(root, 'js', 'tracks')).filter(function (d) {

@@ -370,10 +370,11 @@ HS.exercises = (function () {
 
   var speak = function (ex, ctx) {
     var tag = ex.lang || 'fr-FR';
-    var tries = 0, stopFn = null, heardVoice = false;
+    var tries = 0, misses = 0, stopFn = null, heardVoice = false;
     var status = el('div.speak-status');
-    var ring = el('span.mic-ring');                       // grows with how loud you are
+    var ring = el('span.mic-ring');                       // grows while the recogniser hears you
     var live = el('div.speak-live');                      // the words as they are recognised
+    var helpBox = el('div.speak-help');                   // how to switch the mic on, when needed
     var mic = el('button.mic', { type: 'button', onclick: toggle },
       [ring, el('span.mic-icon', { text: '🎤' }), el('span.mic-label', { text: 'Tap and speak' })]);
     var said = el('button.btn.ghost.sm', { type: 'button', onclick: function () { ctx.skip(); } }, ['I said it — continue']);
@@ -386,9 +387,22 @@ HS.exercises = (function () {
     var manual = !HS.speech.canListen();
     if (manual) {
       mic.hidden = true;
-      status.textContent = 'This browser can’t listen, so say it out loud yourself — then tap “I said it”.';
+      status.textContent = HS.platform.browserName() + ' can’t listen, so say it out loud yourself — then tap “I said it”.';
+      showHelp({ words: true });
     } else {
       said.hidden = true;
+    }
+
+    /* The steps for this exact phone, laptop or browser — shown only when needed, and led by the
+       ones that fit what went wrong: opts.words when the microphone plainly works and only the
+       words are missing, otherwise the permission steps first. */
+    var helpFor = null;
+    function showHelp(opts) {
+      var kind = (opts && opts.words) ? 'words' : 'permission';
+      if (helpFor === kind) return;
+      helpFor = kind;
+      helpBox.textContent = '';
+      helpBox.appendChild(HS.platform.micHelpNode({ test: true, words: kind === 'words' }));
     }
 
     function setListening(on) {
@@ -410,6 +424,22 @@ HS.exercises = (function () {
       else if (state === 'quiet') { status.className = 'speak-status'; status.textContent = 'Got it — checking…'; }
     }
 
+    /* Nothing came back. Say which of the two very different reasons it was, because the fix
+       is different: the microphone never opened, or it opened and no words came out of it. */
+    function nothingHeard(seen) {
+      misses++;
+      status.className = 'speak-status bad';
+      if (heardVoice || seen.voice) {
+        status.textContent = 'I heard you, but couldn’t make out the words — tap the mic and try again, a little slower.';
+      } else if (!seen.audio) {
+        status.textContent = 'The microphone never opened. Something else may be using it, or ' + HS.platform.browserName() + ' isn’t allowed to.';
+        showHelp();
+      } else {
+        status.textContent = 'I didn’t hear anything. Speak up right after the beep — the ring moves when the microphone is really picking you up.';
+      }
+      if (misses >= 2) { showHelp({ words: heardVoice || seen.voice }); said.hidden = false; }
+    }
+
     function toggle() {
       if (stopFn) { stopFn(); return; }
       HS.speech.unlock();
@@ -419,28 +449,32 @@ HS.exercises = (function () {
       heardVoice = false;
       setListening(true);
       HS.audio.cue('listen');
-      stopFn = HS.speech.listen(tag, function (err, alts) {
+      stopFn = HS.speech.listen(tag, function (err, alts, seen) {
         stopFn = null;
         setListening(false);
         HS.audio.cue('done');
         if (err && err !== 'no-speech') {
           said.hidden = false;
-          mic.hidden = true;
-          status.textContent = err === 'not-allowed' || err === 'service-not-allowed'
-            ? 'Microphone or speech recognition is blocked. On iPhone, allow them in Settings → Safari, and turn on Settings → General → Keyboard → Enable Dictation. Until then, say it out loud and tap “I said it”.'
-            : err === 'network'
-              ? 'Speech recognition needs an internet connection here. Say it out loud and tap “I said it”.'
-              : 'Couldn’t listen (' + err + '). Say it out loud and tap “I said it”.';
-          return;
-        }
-        if (!alts.length) {
           status.className = 'speak-status bad';
-          status.textContent = heardVoice
-            ? 'I heard you, but couldn’t make out the words — tap the mic and try again, a little slower.'
-            : 'I didn’t hear anything. Check the microphone is allowed and speak up — the ring around the mic moves when it hears you.';
+          if (err === 'not-allowed' || err === 'service-not-allowed') {
+            mic.hidden = true;
+            status.textContent = 'The microphone is blocked. Until it’s allowed, say it out loud and tap “I said it”.';
+            showHelp();
+          } else if (err === 'network') {
+            status.textContent = 'Turning speech into words needs an internet connection in ' + HS.platform.browserName() + '. Say it out loud and tap “I said it”.';
+            showHelp({ words: true });
+          } else if (err === 'audio-capture') {
+            status.textContent = 'No microphone available. Say it out loud and tap “I said it”.';
+            showHelp();
+          } else {
+            status.textContent = 'Couldn’t listen (' + err + '). Say it out loud and tap “I said it”.';
+            showHelp();
+          }
           return;
         }
+        if (!alts.length) return nothingHeard(seen || {});
         tries++;
+        misses = 0;
         var best = HS.speech.grade(alts, ex.targets, tag);
         if (best.ok) {
           status.textContent = 'I heard: “' + best.heard + '”';
@@ -469,7 +503,7 @@ HS.exercises = (function () {
           el('div.bubble', {}, [el('div', { text: ex.text }), readingLine(ex.reading)])
         ]),
         el('div.gloss', { text: ex.translation }),
-        el('div.speak-box', {}, [mic, status, live, said, cant])
+        el('div.speak-box', {}, [mic, status, live, said, cant, helpBox])
       ]),
       cleanup: function () { if (stopFn) stopFn(); }
     };
