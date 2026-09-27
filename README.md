@@ -173,6 +173,15 @@ plus a stamp of it, and a stamp that no longer matches is thrown away rather tha
 wrong questions). Practice and spaced review are put together on the spot and can't be rebuilt, so
 they aren't kept.
 
+**← goes back a question.** An earlier question in the same lesson can be done again: ← steps back
+through the ones you have already seen, → steps forward through them, and either "Back to where I
+was" or the last → returns to where the lesson had got to. A question you go back to is marked as
+such and is **free practice** — right or wrong, it leaves the tally, the hearts, the review schedule
+and the saved place exactly as they were, so it can't be used to undo a wrong answer or to farm XP.
+Going back while feedback is on screen is fine too: that answer has already counted, so returning
+carries on to the next question rather than asking it again. The trail is per visit — a lesson picked
+up after a break starts a new one, so ← reaches back only as far as this sitting.
+
 **Difficulty climbs steadily.** `node tools/difficulty.js all` checks every track against a
 straight-line ramp: sentence, quote and passage length for the languages (with a check that
 sentences mostly use words taught earlier), notes to play for piano, and answer length for talk
@@ -215,7 +224,7 @@ content/<language>/  SOURCES.md (editions used), RESEARCH.md (how the curriculum
                      TALK.md (how talk mode teaches speaking)
 tools/check-content.js  checks unit and talk shape, explanations, no repeats, quotes verbatim
 tools/check-speech.js   checks listening against a fake recogniser (no browser needed)
-tools/check-resume.js   checks a half-finished lesson survives leaving (needs jsdom)
+tools/check-lesson.js   checks a lesson's place: kept on leaving, and steppable back (needs jsdom)
 tools/difficulty.js     checks that difficulty climbs in a straight line
 tools/sync-files.js     keeps index.html and sw.js in step with the files on disk
 PLAN.md               the full project plan

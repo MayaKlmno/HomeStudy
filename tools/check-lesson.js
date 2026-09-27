@@ -1,13 +1,16 @@
 #!/usr/bin/env node
-/* Checks that a lesson left part-way through is not lost.
+/* Checks where a lesson thinks it is — kept when you walk out, and steppable backwards.
 
-   npm i --no-save jsdom && node tools/check-resume.js
+   npm i --no-save jsdom && node tools/check-lesson.js
 
    Walks part of a real French lesson in a headless page, walks out to the home screen, comes back,
    and checks that the place, the tally and the hearts are all where they were — including after the
    page is thrown away and loaded again, since localStorage is what actually holds it. Also checks
    the ways a kept lesson must be dropped: finished, failed, started over, replaced by another, or
    built from content that has since changed.
+
+   Then the ← button: an earlier question can be done again, and doing it must change nothing —
+   not the tally, not the hearts, not the saved place.
 */
 'use strict';
 var fs = require('fs'), path = require('path');
@@ -257,6 +260,117 @@ p6.HS.app.render();
 ok('a practice run leaves nothing to pick up', p6.HS.storage.lesson() === null,
   JSON.stringify(p6.HS.storage.lesson()));
 ok('and it really was a practice run', /Pick one|q/.test(text(p6.app())), text(p6.app()).slice(0, 40));
+
+/* ---------- going back to an earlier question ---------- */
+
+/** The question on screen, read from its own element — the page text around it has numbers too. */
+function onScreen(p) {
+  var h = p.app().querySelector('.q-head');
+  return h ? text(h) : null;
+}
+function nav(p, which) {
+  return p.app().querySelector('.lesson-top button[title="' + which + '"]');
+}
+function looking(p) { return !!p.app().querySelector('.look-note'); }
+
+console.log('\ngoing back to do an earlier question again');
+var p7 = load(store, '#/');
+simpleLevels(p7, 6);
+p7.win.location.hash = '#/lesson/french/12';
+p7.HS.app.render();
+ok('nothing to go back to on the first question', nav(p7, 'Go back a question').disabled);
+ok('and no forward button either', nav(p7, 'Forward a question').hidden);
+ok('question 1 is up', onScreen(p7) === 'Question 1', onScreen(p7));
+
+step(p7, true);
+step(p7, false);                            // one right, one wrong: hearts and tally have moved
+ok('question 3 is up', onScreen(p7) === 'Question 3', onScreen(p7));
+var before = JSON.parse(JSON.stringify(p7.HS.storage.lesson()));
+var barBefore = progress(p7);
+ok('going back is now offered', nav(p7, 'Go back a question').disabled === false);
+
+nav(p7, 'Go back a question').dispatchEvent(new p7.win.Event('click'));
+ok('it shows the question before', onScreen(p7) === 'Question 2', onScreen(p7));
+ok('and says plainly that it is a look back', looking(p7) && /doesn’t count/.test(text(p7.app())),
+  (text(p7.app()).match(/An earlier question[^.]*\./) || [''])[0]);
+ok('the forward button appears', nav(p7, 'Forward a question').hidden === false);
+ok('the progress bar does not move', progress(p7) === barBefore, progress(p7) + '% vs ' + barBefore + '%');
+
+/* Answering it must change nothing at all. */
+step(p7, true);
+var after = p7.HS.storage.lesson();
+ok('answering an earlier question leaves the tally alone',
+  after.answered === before.answered && after.done === before.done,
+  after.answered + '/' + after.done + ' vs ' + before.answered + '/' + before.done);
+ok('and the hearts alone', after.hearts === before.hearts, after.hearts + ' vs ' + before.hearts);
+ok('and what is still to come', JSON.stringify(after.queue) === JSON.stringify(before.queue), after.queue.length);
+ok('getting one wrong there costs nothing either', (function () {
+  nav(p7, 'Go back a question').dispatchEvent(new p7.win.Event('click'));
+  step(p7, false);
+  var now = p7.HS.storage.lesson();
+  return now.hearts === before.hearts && now.wrongCount === before.wrongCount;
+})(), p7.HS.storage.lesson().hearts + ' hearts');
+
+console.log('\nfinding the way back to the lesson');
+ok('it went two back', onScreen(p7) === 'Question 1', onScreen(p7));
+ok('so there is nothing further back', nav(p7, 'Go back a question').disabled);
+nav(p7, 'Forward a question').dispatchEvent(new p7.win.Event('click'));
+ok('forward steps through what you have seen', onScreen(p7) === 'Question 2', onScreen(p7));
+nav(p7, 'Forward a question').dispatchEvent(new p7.win.Event('click'));
+ok('and forward again returns to the lesson', onScreen(p7) === 'Question 3' && !looking(p7), onScreen(p7));
+ok('with the forward button gone', nav(p7, 'Forward a question').hidden);
+
+nav(p7, 'Go back a question').dispatchEvent(new p7.win.Event('click'));
+Array.prototype.slice.call(p7.app().querySelectorAll('.look-note button'))[0]
+  .dispatchEvent(new p7.win.Event('click'));
+ok('“Back to where I was” also returns to the lesson', onScreen(p7) === 'Question 3' && !looking(p7), onScreen(p7));
+ok('and the question is still there to answer', !!Array.prototype.slice.call(p7.app().querySelectorAll('.choice')).length);
+ok('with the tally still untouched', p7.HS.storage.lesson().answered === before.answered,
+  p7.HS.storage.lesson().answered);
+
+console.log('\ngoing back after answering, rather than before');
+var p8 = load(store, '#/');
+simpleLevels(p8, 6);
+p8.win.location.hash = '#/lesson/french/13';
+p8.HS.app.render();
+step(p8, true);
+/* Answer, then go back while the feedback is still showing. */
+var opts8 = Array.prototype.slice.call(p8.app().querySelectorAll('.choice'));
+opts8.filter(function (o) { return text(o).replace(/^\d+\s*/, '') === 'right'; })[0]
+  .dispatchEvent(new p8.win.Event('click'));
+Array.prototype.slice.call(p8.app().querySelectorAll('.lesson-foot button'))
+  .filter(function (b) { return /Check/.test(b.textContent); })[0].dispatchEvent(new p8.win.Event('click'));
+var tally8 = JSON.parse(JSON.stringify(p8.HS.storage.lesson()));
+nav(p8, 'Go back a question').dispatchEvent(new p8.win.Event('click'));
+ok('it goes back from the feedback too', looking(p8) && onScreen(p8) === 'Question 1', onScreen(p8));
+Array.prototype.slice.call(p8.app().querySelectorAll('.look-note button'))[0]
+  .dispatchEvent(new p8.win.Event('click'));
+ok('and returning carries on rather than asking that one twice',
+  onScreen(p8) === 'Question 3' && !looking(p8), onScreen(p8));
+ok('so that answer is counted once, not twice',
+  p8.HS.storage.lesson().answered === tally8.answered && p8.HS.storage.lesson().done === tally8.done,
+  p8.HS.storage.lesson().answered + '/' + p8.HS.storage.lesson().done
+    + ' vs ' + tally8.answered + '/' + tally8.done);
+
+console.log('\nleaving while looking back');
+var p9 = load(store, '#/');
+simpleLevels(p9, 6);
+p9.win.location.hash = '#/lesson/french/14';
+p9.HS.app.render();
+step(p9, true);
+step(p9, true);
+var live9 = onScreen(p9);
+var kept9 = JSON.parse(JSON.stringify(p9.HS.storage.lesson()));
+nav(p9, 'Go back a question').dispatchEvent(new p9.win.Event('click'));
+p9.win.location.hash = '#/';
+p9.HS.app.render();
+ok('the place kept is the lesson’s, not the one being looked at',
+  JSON.stringify(p9.HS.storage.lesson().queue) === JSON.stringify(kept9.queue),
+  p9.HS.storage.lesson().queue.length + ' vs ' + kept9.queue.length);
+p9.win.location.hash = '#/lesson/french/14';
+p9.HS.app.render();
+ok('so coming back lands on the question the lesson was on', onScreen(p9) === live9, onScreen(p9) + ' vs ' + live9);
+ok('and not in a look back', !looking(p9));
 
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall passed');
 process.exit(fails ? 1 : 0);

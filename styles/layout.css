@@ -67,6 +67,11 @@
   position:sticky;top:0;background:var(--bg);z-index:20;
 }
 .progress{flex:1;height:16px;background:var(--line);border-radius:10px;overflow:hidden;}
+/* Up to six things share this row on a phone, so it tightens rather than wraps. */
+@media (max-width: 420px){
+  .lesson-top{gap:6px;padding-left:10px;padding-right:10px;}
+  .lesson-top .icon-btn{font-size:21px;padding:4px;}
+}
 .progress > i{display:block;height:100%;background:var(--green);border-radius:10px;transition:width .3s ease;}
 .lesson-body{flex:1;width:100%;max-width:620px;margin:0 auto;padding:10px 16px 150px;}
 .lesson-foot{

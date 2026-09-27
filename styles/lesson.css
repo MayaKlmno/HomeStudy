@@ -197,3 +197,10 @@
 .mic.hearing{background:var(--correct-ink);box-shadow:0 5px 0 rgba(0,0,0,.25);}
 .mic.hearing .mic-ring{border-color:var(--correct-ink);}
 .speak-live{min-height:22px;font-size:17px;font-weight:700;color:var(--ink-soft);max-width:420px;word-break:keep-all;overflow-wrap:anywhere;}
+
+/* Looking back at an earlier question: plainly not the lesson's own place. */
+.look-note{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 18px;
+  border:2px dashed var(--line-dark);border-radius:14px;padding:12px 14px;background:var(--bg-soft);
+}
+.look-text{flex:1;min-width:180px;font-size:13px;font-weight:700;line-height:1.5;color:var(--ink-soft);}

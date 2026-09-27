@@ -28,8 +28,16 @@ HS.engine = (function () {
     var state = {
       hearts: HEARTS, done: 0, wrongCount: 0, answered: 0,
       started: Date.now(), spent: 0, current: null, renderer: null, checked: false,
-      combo: 0, bestCombo: 0, graded: {}
+      combo: 0, bestCombo: 0, graded: {},
+      /* Every question put in front of you, in the order it appeared, so an earlier one can be
+         done again. Repeats are separate entries: they were separate goes. */
+      seen: [], back: null, live: null
     };
+
+    /** True while looking at an earlier question rather than the one the lesson is on. */
+    function looking() { return !!state.back; }
+    /** Where in `seen` the screen is: the last one when live, or the one being looked back at. */
+    function atIndex() { return looking() ? state.back.i : state.seen.length - 1; }
 
     /* ---------- picking up where you left off ---------- */
 
@@ -64,7 +72,10 @@ HS.engine = (function () {
       var now = Date.now();
       state.spent += now - state.started;
       state.started = now;
-      var pending = (withCurrent && state.current ? [state.current] : []).concat(queue);
+      /* While looking back, the lesson's own place is the one set aside, not what is on screen. */
+      var head = looking() ? (state.live && !state.live.checked ? state.live.ex : null)
+                           : (withCurrent ? state.current : null);
+      var pending = (head ? [head] : []).concat(queue);
       HS.storage.saveLesson({
         track: trackId, level: levelN, stamp: mark, at: now,
         queue: pending.map(function (ex) {
@@ -90,6 +101,15 @@ HS.engine = (function () {
     /* ---------- chrome ---------- */
     var bar = el('i', { style: { width: '0%' } });
     var heartsEl = el('div.stat.hearts', {}, ['❤️ ' + state.hearts]);
+    var backBtn = el('button.icon-btn', {
+      type: 'button', title: 'Go back a question', 'aria-label': 'Go back a question',
+      disabled: true, onclick: goBack
+    }, ['←']);
+    var fwdBtn = el('button.icon-btn', {
+      type: 'button', title: 'Forward a question', 'aria-label': 'Forward a question',
+      hidden: true, onclick: goForward
+    }, ['→']);
+
     /* Only offered on a lesson picked up part-way: otherwise there is nothing to start over. */
     var restart = resumed ? el('button.icon-btn', {
       type: 'button', title: 'Start this level again', 'aria-label': 'Start this level again',
@@ -102,6 +122,7 @@ HS.engine = (function () {
     }, ['↻']) : null;
     var top = el('div.lesson-top', {}, [
       el('button.icon-btn', { type: 'button', title: 'Leave lesson', onclick: quit }, ['✕']),
+      backBtn, fwdBtn,
       el('div.progress', {}, [bar]),
       restart,
       el('button.icon-btn.help-btn', { type: 'button', title: 'Explain this', 'aria-label': 'Explain this', onclick: openHelp }, ['?']),
@@ -113,7 +134,7 @@ HS.engine = (function () {
       var ex = state.current;
       if (!ex) return;
       var note = '';
-      if (!state.checked && !ex.peeked && ['tip', 'passage'].indexOf(ex.type) === -1) {
+      if (!state.checked && !looking() && !ex.peeked && ['tip', 'passage'].indexOf(ex.type) === -1) {
         ex.peeked = true;
         note = 'No penalty for looking — this one comes back once at the end so you can answer it from memory.';
       }
@@ -146,28 +167,45 @@ HS.engine = (function () {
     /* ---------- flow ---------- */
 
     function next() {
-      cleanup();
-      state.checked = false;
-      HS.speech.stop();
-      if (!queue.length) return finishLesson();
+      state.back = null;
+      state.live = null;
+      if (!queue.length) { cleanup(); return finishLesson(); }
 
       var ex = queue.shift();
       if (ex.type === 'speak' && !speakingOn()) { total--; return next(); }
+      if (!HS.exercises[ex.type]) { console.warn('unknown exercise', ex); return next(); }
+      state.seen.push(ex);
+      present(ex);
+      remember(true);                      // this question is still to answer
+    }
+
+    /**
+     * Puts one question on screen. The same rendering serves the lesson and a look back at an
+     * earlier question — what differs is that a look back is not graded, so it touches neither
+     * the tally, the hearts, nor where the lesson has got to.
+     */
+    function present(ex) {
+      cleanup();
+      state.checked = false;
+      HS.speech.stop();
       state.current = ex;
       HS.speech.setLang(ex.lang || track.lang);
-      bar.style.width = Math.round(state.done / Math.max(total, state.done + queue.length + 1) * 100) + '%';
+      if (!looking()) {
+        bar.style.width = Math.round(state.done / Math.max(total, state.done + queue.length + 1) * 100) + '%';
+      }
 
-      var renderer = HS.exercises[ex.type];
-      if (!renderer) { console.warn('unknown exercise', ex); return next(); }
-
-      var ctx = {
+      var r = HS.exercises[ex.type](ex, {
         finish: function (ok, sol) { settle(ok, sol); },
-        skip: function () { state.done++; next(); }        // moved on without being graded
-      };
-      var r = renderer(ex, ctx);
+        skip: function () {
+          if (looking()) return toLive();
+          state.done++;                    // moved on without being graded
+          next();
+        }
+      });
       state.renderer = r;
 
       body.innerHTML = '';
+      if (looking()) body.appendChild(lookNote());
       body.appendChild(r.node);
       body.scrollTop = 0;
       window.scrollTo(0, 0);
@@ -182,7 +220,49 @@ HS.engine = (function () {
       } else {
         showCheck(r);
       }
-      remember(true);                      // this question is still to answer
+      syncNav();
+    }
+
+    /* ---------- looking back ---------- */
+
+    /** The band above a question you have gone back to, and the way out of it. */
+    function lookNote() {
+      return el('div.look-note', {}, [
+        el('div.look-text', { text: '↩ An earlier question — question ' + (state.back.i + 1)
+          + ' of the ' + state.seen.length + ' so far. Have another go: it doesn’t count either way.' }),
+        el('button.btn.ghost.sm', { type: 'button', onclick: toLive }, ['Back to where I was'])
+      ]);
+    }
+
+    function goBack() {
+      var i = atIndex() - 1;
+      if (i < 0) return;
+      if (!looking()) state.live = { ex: state.current, checked: state.checked };
+      state.back = { i: i };
+      present(state.seen[i]);
+    }
+
+    function goForward() {
+      if (!looking()) return;
+      var i = state.back.i + 1;
+      if (i >= state.seen.length - 1) return toLive();   // the last one seen is the live one
+      state.back = { i: i };
+      present(state.seen[i]);
+    }
+
+    /** Back to the question the lesson is actually on. */
+    function toLive() {
+      var live = state.live;
+      state.back = null;
+      state.live = null;
+      /* That answer had already been counted, so there is nothing to answer again — carry on. */
+      if (!live || live.checked) return next();
+      present(live.ex);
+    }
+
+    function syncNav() {
+      backBtn.disabled = atIndex() <= 0;
+      fwdBtn.hidden = !looking();
     }
 
     function showCheck(r) {
@@ -213,6 +293,9 @@ HS.engine = (function () {
     function settle(ok, solution) {
       if (state.checked) return;
       state.checked = true;
+      /* A look back is practice: it is shown the same and marked the same, but it changes nothing
+         about the lesson — not the tally, not the hearts, not the review schedule. */
+      if (looking()) return showFeedback(ok, solution, { revisit: true });
       state.answered++;
 
       var ex = state.current;
@@ -246,27 +329,32 @@ HS.engine = (function () {
       showFeedback(ok, solution);
     }
 
-    function showFeedback(ok, solution) {
+    function showFeedback(ok, solution, opts) {
+      opts = opts || {};
       foot.classList.remove('correct', 'wrong');
       foot.classList.add(ok ? 'correct' : 'wrong');
 
-      var msg = ok ? HS.util.pick(['Nice!', 'Correct!', 'Well done!', 'Exactly!', 'Bravo !'])
-                   : 'Not quite';
+      var msg = opts.revisit ? (ok ? 'Right' : 'Not quite — and it doesn’t count')
+              : ok ? HS.util.pick(['Nice!', 'Correct!', 'Well done!', 'Exactly!', 'Bravo !'])
+              : 'Not quite';
       var lines = [el('h4', { class: ok ? 'fb-correct' : 'fb-wrong', text: msg })];
       if (!ok && solution) lines.push(el('div.sol', { class: 'fb-wrong', text: solution }));
       else if (!ok && state.current && state.current.answer)
         lines.push(el('div.sol', { class: 'fb-wrong', text: 'Answer: ' + state.current.answer }));
 
+      /* Onwards from a look back means the next one you have already seen, or the lesson itself. */
+      var onward = opts.revisit && state.back && state.back.i < state.seen.length - 2;
       var cont = el('button.btn.wide', {
         class: ok ? 'primary' : 'danger', type: 'button',
         onclick: function () {
           foot.classList.remove('correct', 'wrong');
+          if (opts.revisit) return onward ? goForward() : toLive();
           /* The out-of-hearts screen is shown on a timer below, so that the feedback lands first.
              A quick tap could otherwise get past it and carry on with hearts in the minus. */
           if (state.hearts <= 0) return failed();
           next();
         }
-      }, ['Continue']);
+      }, [opts.revisit ? (onward ? 'Next one →' : 'Back to where I was') : 'Continue']);
 
       footInner.innerHTML = '';
       footInner.appendChild(el('div.feedback', {}, [
@@ -282,7 +370,7 @@ HS.engine = (function () {
         document.removeEventListener('keydown', onEnter); if (old) old();
       };
 
-      if (state.hearts <= 0) setTimeout(function () { cont.onclick = null; failed(); }, 0);
+      if (!opts.revisit && state.hearts <= 0) setTimeout(function () { cont.onclick = null; failed(); }, 0);
     }
 
     function failed() {
