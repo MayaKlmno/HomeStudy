@@ -498,14 +498,14 @@ HS.screens = (function () {
           el('div.row', {}, [
             el('div', {}, [el('div', { text: 'Microphone' }),
               el('div.muted', { style: { fontSize: '13px', fontWeight: '600' },
-                text: 'For speaking exercises and talk mode · ' + HS.platform.label() })]),
+                text: 'For speaking exercises and talk mode · ' + HS.platform.label()
+                      + (s.settings.micWarmup ? ' · waits ' + s.settings.micWarmup + 'ms for the recogniser' : '') })]),
             el('div.spacer'),
             HS.speech.canListen() ? el('button.btn.ghost.sm', { type: 'button', onclick: function () {
               if (stopFn) { stopFn(); return; }
               HS.audio.unlock();
-              HS.audio.cue('listen');
               meter.classList.add('on');
-              out.textContent = 'Listening — say anything…';
+              out.textContent = 'Getting the microphone ready…';
               stopFn = HS.speech.listen('en-US', function (err, alts, seen) {
                 stopFn = null;
                 meter.classList.remove('on', 'hearing');
@@ -528,9 +528,16 @@ HS.screens = (function () {
                 showHelp({ words: seen.voice || err === 'offline' || err === 'network' || seen.audio });
               }, {
                 on: function (state, info) {
-                  if (state === 'voice') { meter.classList.add('hearing'); out.textContent = '🎙 I can hear you'; }
+                  /* Showing each stage on purpose: the wait before the beep is the thing people
+                     need to see, because talking during it is what makes half a sentence arrive. */
+                  if (state === 'starting') out.textContent = '⏳ Getting the microphone ready — wait for the beep…';
+                  else if (state === 'ready' || state === 'again') {
+                    HS.audio.cue('listen');
+                    out.textContent = state === 'again' ? '🎤 Once more — say anything after the beep'
+                                                        : '🎤 Listening — say anything now';
+                  }
+                  else if (state === 'voice') { meter.classList.add('hearing'); out.textContent = '🎙 I can hear you'; }
                   else if (state === 'words') out.textContent = '“' + info + '”';
-                  else if (state === 'again') out.textContent = 'Nothing came back — listening again…';
                 },
                 level: function (v) { bar.style.width = Math.round(v * 100) + '%'; }
               });

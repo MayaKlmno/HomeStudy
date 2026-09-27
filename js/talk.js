@@ -253,7 +253,6 @@ HS.talkMode = (function () {
       return new Promise(function (resolve) {
         var silent, longest, heardVoice = false, stopFn = null;
         micUI(s, true, 0);
-        HS.audio.cue('listen');
 
         /* Any sign of life — sound, speech, or words coming in — buys you the long window.
            Only the speech event used to count, and Chrome on Android never sends it, so a
@@ -274,7 +273,15 @@ HS.talkMode = (function () {
           resolve({ err: err, alts: alts, heardVoice: heardVoice || (seen && seen.voice), seen: seen || {} });
         }, {
           on: function (state, info) {
-            if (state === 'ready') show(s, { status: '🎤 Listening — say it now' });
+            /* The beep is the promise that you are being recorded, so it waits for the recogniser
+               to really be listening. Beeping when the microphone merely opens loses your first
+               words — and in the car the beep is all you have to go on. */
+            if (state === 'starting') show(s, { status: '⏳ Getting ready — wait for the beep' });
+            else if (state === 'ready' || state === 'again') {
+              arm();
+              HS.audio.cue('listen');
+              show(s, { status: state === 'again' ? '🎤 Once more — after the beep' : '🎤 Listening — say it now' });
+            }
             else if (state === 'sound') { alive(); show(s, { status: 'Picking something up…' }); }
             else if (state === 'voice') {
               alive();                                    // you are talking: let you finish
@@ -283,12 +290,12 @@ HS.talkMode = (function () {
               show(s, { status: '🎙 I can hear you' });
             } else if (state === 'words') { alive(); s.ui.live.textContent = info || ''; }
             else if (state === 'quiet') show(s, { status: 'Got it — checking…' });
-            else if (state === 'again') { arm(); show(s, { status: '🎤 Once more — say it now' }); }
           },
           level: function (v) { micUI(s, true, v); }
         });
         s.stopListen = stopFn;
-        arm();
+        /* Until the beep, only the long stop applies: waking the recogniser is not your silence. */
+        longest = setTimeout(function () { if (stopFn) stopFn(); }, LONGEST_WAIT + QUIET_WAIT);
       });
     });
   }

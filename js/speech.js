@@ -110,13 +110,14 @@ HS.speech = (function () {
 
   /* What the last attempt did, for the "it still can't hear me" panel. Plain text on purpose:
      it is meant to be read out or pasted into a message. */
-  var trace = { lines: [], err: null, results: 0, lang: '', plain: false, online: true, tries: 0 };
+  var trace = { lines: [], err: null, results: 0, lang: '', plain: false, online: true, tries: 0, warmup: 0 };
   function lastTrace() {
     if (!trace.lines.length) return '';
     return [(HS.platform ? HS.platform.label() : 'unknown device'),
             'language ' + trace.lang,
             (trace.plain ? 'plain recogniser' : 'full recogniser') + (trace.tries > 1 ? ' on try ' + trace.tries : ''),
             (trace.online ? 'online' : 'OFFLINE'),
+            'warm-up ' + trace.warmup + 'ms',
             trace.results + ' result' + (trace.results === 1 ? '' : 's'),
             trace.lines.join(' · ')].join(' | ');
   }
@@ -130,6 +131,36 @@ HS.speech = (function () {
      is what works we start that way from then on. */
   var preferPlain = false;
 
+  /* ---------- waiting for the recogniser to really be listening ---------- */
+
+  /* A recogniser that runs on a server says it has started well before it can hear anything: the
+     microphone is open, but the sound goes nowhere until the connection behind it is up, and
+     whatever is said in the meantime is thrown away. So "say it now" the instant the microphone
+     opens is a lie, and the beginning of the answer is lost — which reads as half-heard words, or
+     nothing at all. We wait out that gap before giving the go-ahead. Safari recognises on the
+     device and is ready straight away. */
+  function warmupFloor() {
+    var p = HS.platform;
+    if (!p || p.browser === 'safari') return 0;
+    return p.os === 'android' ? 800 : 250;
+  }
+  function settings() {
+    return (HS.storage && HS.storage.state && HS.storage.state.settings) || null;
+  }
+  function warmup() {
+    var st = settings();
+    return Math.max(warmupFloor(), (st && st.micWarmup) || 0);
+  }
+  /* The gap can't be measured — nothing announces it — so it is learned from how things go:
+     longer after an attempt the microphone slept through, a little shorter after a clean one. */
+  function learnWarmup(ms) {
+    var st = settings();
+    if (!st) return;
+    st.micWarmup = Math.max(0, Math.min(2000, (st.micWarmup || 0) + ms));
+    HS.storage.save();
+  }
+  var GO_ANYWAY = 1800;               // no news from the recogniser: go ahead regardless
+
   /**
    * Listens for one phrase. cb(err, alternatives, info):
    *   err   — null, 'no-speech', 'not-allowed', 'service-not-allowed', 'network', 'offline',
@@ -140,7 +171,8 @@ HS.speech = (function () {
    * Returns a function that stops listening.
    *
    * opts.on(state, info) reports what the microphone is doing, so the screen can show it:
-   *   'ready'  — the microphone is open and listening
+   *   'starting' — asked to listen, but not listening yet: do not invite speech
+   *   'ready'  — really listening now: the moment to beep and say "say it now"
    *   'sound'  — something is coming in
    *   'voice'  — that something is speech: you are being heard
    *   'words'  — info is the text recognised so far
@@ -159,13 +191,17 @@ HS.speech = (function () {
 
     var rec = null, finished = false, aborted = false, tries = 0, t0 = Date.now();
     var bar = pulse(opts.level);
-    trace = { lines: [], err: null, results: 0, lang: use, plain: preferPlain, online: !offline(), tries: 0 };
+    var live = false, graceTimer = null, goAnyway = null;
+    trace = { lines: [], err: null, results: 0, lang: use, plain: preferPlain, online: !offline(),
+              tries: 0, warmup: warmup() };
 
     function note(what) { trace.lines.push(Math.round(Date.now() - t0) + 'ms ' + what); }
 
     function end(err, alts) {
       if (finished) return;
       finished = true;
+      clearTimeout(graceTimer);
+      clearTimeout(goAnyway);
       if (active === halt) active = null;
       bar.stop();
       trace.err = err;
@@ -185,7 +221,11 @@ HS.speech = (function () {
     function attemptOver(err, alts) {
       if (finished) return;
       if (alts && alts.length) {
-        if (tries > 1) preferPlain = true;        // the plain one is what works on this phone
+        /* Only a second try that works teaches us anything about the wait: it means the first
+           one was asleep when you spoke. Coming back empty teaches nothing — you may simply
+           have said nothing, and lengthening the wait for that would punish the quiet. */
+        if (tries > 1) { preferPlain = true; learnWarmup(400); }
+        else learnWarmup(-100);                   // it worked first time: ease back down
         return end(null, alts);
       }
       if (!aborted && tries === 1 && !HOPELESS[err] && !seen.voice) {
@@ -198,10 +238,33 @@ HS.speech = (function () {
     /** 'ready' the first time round, 'again' once we are on the second try. */
     function began() { return tries > 1 ? 'again' : 'ready'; }
 
+    /* The one moment worth beeping at: the recogniser is genuinely taking sound now. */
+    function goLive() {
+      if (live || finished) return;
+      live = true;
+      clearTimeout(graceTimer);
+      clearTimeout(goAnyway);
+      note('go');
+      bar.to(0.12);
+      on(began());
+    }
+    /* The microphone is open. Wait out the gap behind it, then give the go-ahead. */
+    function armGo() {
+      if (live || graceTimer) return;
+      var ms = warmup();
+      note('mic open, waiting ' + ms + 'ms');
+      graceTimer = setTimeout(goLive, ms);
+    }
+    /* Anything that proves it is really listening means the wait is over, whatever the clock says. */
+    function proofOfLife() { goLive(); }
+
     function attempt(plain) {
       tries++;
       trace.plain = !!plain;
       trace.tries = tries;
+      live = false;
+      clearTimeout(graceTimer); graceTimer = null;
+      clearTimeout(goAnyway);
       try {
         rec = new Rec();
         rec.lang = use;
@@ -209,9 +272,10 @@ HS.speech = (function () {
         rec.interimResults = !plain;
         rec.continuous = false;
         if (!plain) rec.maxAlternatives = 5;
-        rec.onaudiostart = function () { note('audiostart'); state('audio', 0.1); on(began()); };
-        rec.onsoundstart = function () { note('soundstart'); state('sound', 0.45); on('sound'); };
-        rec.onspeechstart = function () { note('speechstart'); state('voice', 0.85); on('voice'); };
+        rec.onstart = function () { note('startevent'); armGo(); };
+        rec.onaudiostart = function () { note('audiostart'); state('audio', 0.1); armGo(); };
+        rec.onsoundstart = function () { note('soundstart'); proofOfLife(); state('sound', 0.45); on('sound'); };
+        rec.onspeechstart = function () { note('speechstart'); proofOfLife(); state('voice', 0.85); on('voice'); };
         rec.onspeechend = function () { note('speechend'); bar.to(0.12); on('quiet'); };
         rec.onresult = function (e) {
           var alts = [], interim = '', isFinal = false;
@@ -222,7 +286,8 @@ HS.speech = (function () {
           }
           if (!isFinal) {
             note('interim words');
-            state('voice', 0.9);                 // words are coming in, so it is hearing you
+            proofOfLife();                       // words are coming in: it is plainly listening
+            state('voice', 0.9);                 // and hearing you
             on('words', interim);
             return;
           }
@@ -235,9 +300,11 @@ HS.speech = (function () {
         };
         rec.onend = function () { note('end'); attemptOver('no-speech', []); };
         note('start' + (plain ? ' (plain)' : ''));
+        on('starting');                          // asked, but not listening yet — don't speak
         rec.start();
         active = halt;
-        on(began());                             // some browsers never fire onaudiostart
+        /* A browser that never says it has started must not leave you waiting for a beep. */
+        goAnyway = setTimeout(function () { note('nothing said it started'); goLive(); }, GO_ANYWAY);
       } catch (e) {
         note('start threw');
         attemptOver('error', []);
@@ -266,9 +333,11 @@ HS.speech = (function () {
   function pulse(level) {
     if (!level) return { to: function () {}, stop: function () {} };
     var t = 0, amp = 0, target = 0, timer = null;
+    /* A gentle wobble around the real level, not a swing through it: at 0.38 the ring could
+       report a quarter of what was actually being heard, purely on where the wave happened to be. */
     function emit() {
       t++;
-      level(Math.max(0, Math.min(1, amp * (0.62 + 0.38 * Math.sin(t / 2.2)))));
+      level(Math.max(0, Math.min(1, amp * (0.84 + 0.16 * Math.sin(t / 2.2)))));
     }
     (function tick() {
       /* Rises fast, so being heard shows at once; falls slowly, so it doesn't flicker. */

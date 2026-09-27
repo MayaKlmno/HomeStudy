@@ -44,6 +44,22 @@ speech recognition (on iPhone: Settings → General → Keyboard → Enable Dict
 leniently. Where recognition isn't available it becomes "say it aloud, then tap I said it". Turn
 it off in Settings, or tap "Can't speak now" to skip it for an hour.
 
+**Wait for the beep — the beep now waits for the recogniser.** A recogniser that runs on a server
+reports that it has started well before it can hear anything: the microphone is open, but the sound
+goes nowhere until the connection behind it is up, and whatever is said meanwhile is thrown away.
+Saying "say it now" at that moment loses the start of the answer, which arrives as half a sentence
+or as nothing. So the app shows "Getting the microphone ready" first and only beeps once the
+recogniser is genuinely taking sound — on Android that wait starts at 800ms, elsewhere 250ms, and on
+Safari there is none, because it recognises on the device. Anything that proves it is really
+listening (sound, speech, or words coming in) ends the wait early, and a recogniser that announces
+nothing at all gets the go-ahead after 1.8s so you are never left waiting.
+
+That gap can't be measured — nothing announces it — so it is learned: when a first attempt comes
+back empty and a second one immediately works, the wait grows by 400ms (up to 2s); when the first
+attempt works, it eases back by 100ms. Coming back empty teaches nothing on its own, since you may
+simply have said nothing, and lengthening the wait for that would punish the quiet. Settings shows
+the learned wait next to the device name.
+
 If a listen comes back completely empty, it quietly tries once more with a bare recogniser (final
 results only, one guess) before saying anything — Chrome on Android has been seen to return nothing
 at all when asked for interim results and several alternatives, while a plain recogniser on the same
@@ -99,8 +115,9 @@ chord is major or minor, and how to count a rhythm. Looking is free, but the exe
 once at the end of the lesson so you answer it from memory.
 
 **While it listens** you can see and hear what the microphone is doing: a ring around the mic (and
-a bar in talk mode) grows when the recogniser picks you up, it turns green and says "I can hear
-you" the moment it hears speech, the words appear as they are recognised, and beeps mark the start
+a bar in talk mode) grows when the recogniser picks you up, the mic button stays grey and says
+"Wait…" until the recogniser is really listening, then turns green and says "I can hear you" the
+moment it hears speech, the words appear as they are recognised, and beeps mark the start
 and end of listening. That feedback comes from the recogniser's own events, not from a second
 microphone stream — opening one takes the microphone away from the recogniser on most systems
 (iPhone above all), which used to make the ring dance to your voice while recognition heard pure

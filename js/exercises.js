@@ -409,13 +409,29 @@ HS.exercises = (function () {
 
     function setListening(on) {
       mic.classList.toggle('on', on);
-      mic.querySelector('.mic-label').textContent = on ? 'Listening…' : (tries ? 'Try again' : 'Tap and speak');
-      if (!on) { mic.classList.remove('hearing'); ring.style.transform = ''; live.textContent = ''; }
+      label(on ? 'Wait…' : (tries ? 'Try again' : 'Tap and speak'));
+      if (!on) { mic.classList.remove('hearing', 'waiting'); ring.style.transform = ''; live.textContent = ''; }
     }
+    function label(t) { mic.querySelector('.mic-label').textContent = t; }
 
     /* What the microphone is doing, in words, in sound, and in the ring around the mic. */
     function micState(state, info) {
-      if (state === 'ready') { status.className = 'speak-status'; status.textContent = 'Listening — say it now'; }
+      /* 'starting' is the microphone opening; 'ready' is it actually taking sound. Only the
+         second one gets the beep, or you talk into a recogniser that isn't hearing you yet. */
+      if (state === 'starting') {
+        mic.classList.add('waiting');
+        label('Wait…');
+        status.className = 'speak-status';
+        status.textContent = 'Getting the microphone ready — wait for the beep…';
+      }
+      else if (state === 'ready' || state === 'again') {
+        mic.classList.remove('waiting');
+        label('Listening…');
+        HS.audio.cue('listen');
+        status.className = 'speak-status';
+        status.textContent = state === 'again' ? 'Nothing came back — once more, after the beep'
+                                              : 'Listening — say it now';
+      }
       else if (state === 'sound') { status.textContent = 'Picking something up…'; }
       else if (state === 'voice') {
         if (!heardVoice) { heardVoice = true; HS.audio.cue('hearing'); }
@@ -424,7 +440,6 @@ HS.exercises = (function () {
         status.textContent = '🎙 I can hear you';
       } else if (state === 'words') { live.textContent = info || ''; }
       else if (state === 'quiet') { status.className = 'speak-status'; status.textContent = 'Got it — checking…'; }
-      else if (state === 'again') { status.className = 'speak-status'; status.textContent = 'Nothing came back — listening again, say it once more'; }
     }
 
     /* Nothing came back. Say which of the two very different reasons it was, because the fix
@@ -457,7 +472,6 @@ HS.exercises = (function () {
       status.className = 'speak-status';
       heardVoice = false;
       setListening(true);
-      HS.audio.cue('listen');
       stopFn = HS.speech.listen(tag, function (err, alts, seen) {
         stopFn = null;
         setListening(false);

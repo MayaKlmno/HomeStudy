@@ -3,13 +3,17 @@
 
    node tools/check-speech.js
 
-   Two bugs it keeps out. One: the level shown while listening used to come from a second
+   Three bugs it keeps out. One: the level shown while listening used to come from a second
    microphone stream opened by the page, which on most systems takes the microphone away from
    the recogniser — so the ring moved with your voice while recognition heard silence and said
    "I didn't hear anything". Nothing but the recogniser may hold the microphone while it listens.
    Two: an attempt that comes back empty-handed must be retried once with a bare recogniser,
    because Chrome on Android has been seen to return nothing when asked for interim results and
    several alternatives.
+   Three: the go-ahead — the beep the learner speaks after — must wait until the recogniser is
+   really taking sound, not fire when the microphone merely opens. A recogniser that runs on a
+   server drops whatever is said while its connection is coming up, which reads as half-heard
+   words. Nothing may report 'ready' before that wait is over.
 */
 'use strict';
 var fs = require('fs'), path = require('path'), vm = require('vm');
@@ -18,10 +22,12 @@ var SRC = fs.readFileSync(path.join(__dirname, '..', 'js', 'speech.js'), 'utf8')
 /** A fresh speech.js on a fake device, with fake recognisers and a counted getUserMedia.
     opts.noRecogniser — a browser like Firefox, with no speech recognition at all.
     opts.offline      — navigator.onLine false, as when the phone has no connection.
-    opts.safari       — recognition runs on the device, so a dead network doesn't matter. */
+    opts.safari       — recognition runs on the device, so a dead network doesn't matter.
+    opts.android      — a phone whose recogniser needs waking up before it hears anything.
+    opts.warmup       — a wait already learned on this device, in milliseconds. */
 function device(opts) {
   opts = opts || {};
-  var gumCalls = 0, recs = [];
+  var gumCalls = 0, recs = [], saved = 0;
   function Rec() { recs.push(this); }
   Rec.prototype.start = function () { this.started = true; };
   Rec.prototype.stop = function () { if (this.onend) this.onend(); };
@@ -29,8 +35,10 @@ function device(opts) {
     console: console, setTimeout: setTimeout, clearTimeout: clearTimeout,
     Math: Math, Date: Date, String: String, Number: Number, Object: Object, Array: Array, Promise: Promise,
     HS: { util: { normalize: function (s) { return s; }, bare: function (s) { return s; } },
-          platform: { label: function () { return 'test device'; }, browser: opts.safari ? 'safari' : 'chrome' },
-          storage: { state: { settings: { sound: true, speechRate: 0.85 } } } },
+          platform: { label: function () { return 'test device'; }, browser: opts.safari ? 'safari' : 'chrome',
+                      os: opts.android ? 'android' : 'other' },
+          storage: { state: { settings: { sound: true, speechRate: 0.85, micWarmup: opts.warmup || 0 } },
+                     save: function () { saved++; } } },
     navigator: { userAgent: 'check-speech', onLine: !opts.offline,
       mediaDevices: { getUserMedia: function () {
         gumCalls++;
@@ -41,7 +49,9 @@ function device(opts) {
   ctx.window.window = ctx.window;
   vm.createContext(ctx);
   vm.runInContext(SRC, ctx);
-  return { speech: ctx.HS.speech, recs: recs, mics: function () { return gumCalls; } };
+  return { speech: ctx.HS.speech, recs: recs, mics: function () { return gumCalls; },
+           warmup: function () { return ctx.HS.storage.state.settings.micWarmup; },
+           saves: function () { return saved; } };
 }
 
 var fails = 0;
@@ -59,8 +69,8 @@ function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
  *   stop()  — the caller giving up, as a timeout or a second tap would
  * Then checks the single outcome the app reported.
  */
-function listening(name, drive, check) {
-  var d = device(), levels = [], states = [], got = null;
+function listening(name, drive, check, devOpts) {
+  var d = device(devOpts), levels = [], states = [], got = null;
   var halt = d.speech.listen('fr-FR', function (err, alts, seen) {
     got = { err: err, alts: alts, seen: seen };
   }, {
@@ -74,12 +84,20 @@ function listening(name, drive, check) {
       return wait(10).then(function () { return look(n + 1); });
     })(0);
   }
-  return Promise.resolve(drive({ rec: rec, stop: halt, dev: d }))
+  /** Waits for the app to say 'ready' (or 'again'), as a learner waits for the beep. */
+  function go() {
+    return (function look(n) {
+      if (states.filter(function (x) { return x === 'ready' || x === 'again'; }).length) return Promise.resolve();
+      if (n > 400) return Promise.reject(new Error('the go-ahead never came'));
+      return wait(10).then(function () { return look(n + 1); });
+    })(0);
+  }
+  return Promise.resolve(drive({ rec: rec, go: go, stop: halt, dev: d }))
     .then(function () { return wait(120); })
     .then(function () {
       console.log('\n' + name);
       check(got, { levels: levels, states: states, mics: d.mics(), recs: d.recs,
-                   trace: d.speech.lastTrace(), speech: d.speech });
+                   trace: d.speech.lastTrace(), speech: d.speech, dev: d });
     });
 }
 
@@ -89,8 +107,11 @@ Promise.resolve()
   .then(function () {
     return listening('a phrase it recognises', function (p) {
       return p.rec(0).then(function (rec) {
-        rec.onaudiostart(); rec.onsoundstart(); rec.onspeechstart();
-        return wait(90).then(function () { rec.onresult(final('bonjour')); });
+        rec.onaudiostart();
+        return p.go().then(function () {
+          rec.onsoundstart(); rec.onspeechstart();
+          return wait(90).then(function () { rec.onresult(final('bonjour')); });
+        });
       });
     }, function (got, ui) {
       ok('no error', got.err === null, got.err);
@@ -196,6 +217,93 @@ Promise.resolve()
     }, function (got) {
       ok('the late onend does not wipe out the answer', got.err === null && got.alts[0] === 'salut', got);
     });
+  })
+  .then(function () {
+    /* The heart of it: an Android-shaped recogniser must not be spoken to straight away. */
+    return listening('the go-ahead waits for the recogniser', function (p) {
+      return p.rec(0).then(function (rec) {
+        rec.onstart(); rec.onaudiostart();
+        return wait(150);
+      });
+    }, function (got, ui) {
+      ok('it reports starting, not ready', ui.states[0] === 'starting', ui.states);
+      ok('and has not said ready yet, 150ms after the microphone opened',
+        ui.states.indexOf('ready') === -1, ui.states);
+      ok('the trace says how long it means to wait', /waiting 800ms/.test(ui.trace), ui.trace);
+    }, { android: true });
+  })
+  .then(function () {
+    return listening('and then gives it', function (p) {
+      return p.rec(0).then(function (rec) {
+        rec.onaudiostart();
+        return p.go().then(function () {
+          rec.onspeechstart();
+          rec.onresult(final('bonjour'));
+        });
+      });
+    }, function (got, ui) {
+      ok('the go-ahead arrives after the wait', ui.states.indexOf('ready') > 0, ui.states);
+      ok('and the answer is heard', got.err === null && got.alts[0] === 'bonjour', got);
+      ok('a clean first try eases the wait back down', ui.dev.warmup() === 700, ui.dev.warmup());
+    }, { android: true, warmup: 800 });
+  })
+  .then(function () {
+    /* Safari recognises on the device, so making the learner wait would be rude. */
+    return listening('Safari is ready at once', function (p) {
+      return p.rec(0).then(function (rec) { rec.onaudiostart(); return wait(40); });
+    }, function (got, ui) {
+      ok('no waiting about', ui.states.indexOf('ready') >= 0, ui.states);
+      ok('the trace says it waited no time at all', /waiting 0ms/.test(ui.trace), ui.trace);
+    }, { safari: true });
+  })
+  .then(function () {
+    /* A recogniser that announces nothing at all must still let the learner speak. */
+    return listening('a recogniser that says nothing', function (p) {
+      return p.rec(0).then(function () { return wait(1900); });
+    }, function (got, ui) {
+      ok('the go-ahead is given anyway', ui.states.indexOf('ready') >= 0, ui.states);
+      ok('and the trace says why', /nothing said it started/.test(ui.trace), ui.trace);
+    }, { android: true });
+  })
+  .then(function () {
+    /* A second try that works is the one thing that proves the first was asleep. */
+    return listening('the first try was asleep, the second heard you', function (p) {
+      return p.rec(0).then(function (a) { a.onaudiostart(); a.onend(); })
+        .then(function () { return p.rec(1); })
+        .then(function (b) {
+          b.onaudiostart();
+          return p.go().then(function () { b.onspeechstart(); b.onresult(final('bonjour')); });
+        });
+    }, function (got, ui) {
+      ok('the answer is heard', got.alts[0] === 'bonjour', got.alts);
+      ok('and the wait is lengthened for next time', ui.dev.warmup() === 400, ui.dev.warmup());
+      ok('and remembered', ui.dev.saves() >= 1, ui.dev.saves());
+    }, { android: true });
+  })
+  .then(function () {
+    /* Saying nothing must not be mistaken for a sleepy recogniser. */
+    return listening('you simply said nothing', function (p) {
+      return p.rec(0).then(function (a) { a.onaudiostart(); a.onend(); })
+        .then(function () { return p.rec(1); })
+        .then(function (b) { b.onaudiostart(); b.onend(); });
+    }, function (got, ui) {
+      ok('nothing is learned from it', ui.dev.warmup() === 600, ui.dev.warmup());
+      ok('and the wait is not nudged up for being quiet', ui.dev.saves() === 0, ui.dev.saves());
+    }, { android: true, warmup: 600 });
+  })
+  .then(function () {
+    /* The wait must not creep up for ever. */
+    return listening('the learned wait has a ceiling', function (p) {
+      return p.rec(0).then(function (a) { a.onaudiostart(); a.onend(); })
+        .then(function () { return p.rec(1); })
+        .then(function (b) {
+          b.onaudiostart();
+          return p.go().then(function () { b.onresult(final('bonjour')); });
+        });
+    }, function (got, ui) {
+      ok('it stops at two seconds', ui.dev.warmup() === 2000, ui.dev.warmup());
+      ok('having still heard the answer', got.alts[0] === 'bonjour', got.alts);
+    }, { android: true, warmup: 2000 });
   })
   .then(function () {
     var d = device(), ended = [];
