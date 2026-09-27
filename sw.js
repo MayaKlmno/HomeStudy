@@ -1,5 +1,5 @@
 /* Offline cache. Bump VERSION whenever any file below changes so phones pick up the update. */
-var VERSION = 'homestudy-v17';
+var VERSION = 'homestudy-v18';
 var FILES = [
   "./",
   "index.html",

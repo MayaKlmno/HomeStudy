@@ -132,12 +132,16 @@ HS.audio = (function () {
    * the go-ahead beep time to finish ringing first — and nothing new is played until it is back.
    */
   function hush(after) {
-    var released = false;
-    var timer = setTimeout(function () {
+    var released = false, timer = null;
+    function park() {
       if (released) return;
       hushed = true;
       if (ctx && ctx.state === 'running' && ctx.suspend) { try { ctx.suspend(); } catch (e) {} }
-    }, after || 0);
+    }
+    /* No delay means no delay: a timer here, however short, would park the output a tick after
+       the recogniser had already started, which is the very thing this is meant to avoid. */
+    if (after) timer = setTimeout(park, after);
+    else park();
     return function () {
       if (released) return;
       released = true;

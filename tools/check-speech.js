@@ -10,9 +10,10 @@
    Two: an attempt that comes back empty-handed must be retried once with a bare recogniser,
    because Chrome on Android has been seen to return nothing when asked for interim results and
    several alternatives.
-   Four: nothing else may hold the microphone or the speakers while the recogniser listens —
-   on Android a running Web Audio output has been seen to leave it deaf, with the microphone open
-   and not even a sound event arriving.
+   Four: nothing else may hold the microphone while the recogniser listens, and on Android the
+   speakers are parked for the whole of it — a running Web Audio output has been seen to leave the
+   recogniser deaf, and suspending that output halfway through changes the audio route beneath a
+   live session and kills it mid-sentence. So it is parked before anything starts, once.
    Three: the go-ahead — the beep the learner speaks after — must wait until the recogniser is
    really taking sound, not fire when the microphone merely opens. A recogniser that runs on a
    server drops whatever is said while its connection is coming up, which reads as half-heard
@@ -21,6 +22,33 @@
 'use strict';
 var fs = require('fs'), path = require('path'), vm = require('vm');
 var SRC = fs.readFileSync(path.join(__dirname, '..', 'js', 'speech.js'), 'utf8');
+var AUDIO_SRC = fs.readFileSync(path.join(__dirname, '..', 'js', 'audio.js'), 'utf8');
+
+/** The real js/audio.js, with an audio context that records being parked and brought back. */
+function speakers() {
+  var log = [];
+  function Ctx() {
+    var self = this;
+    this.state = 'running';
+    this.currentTime = 0;
+    this.destination = {};
+    this.createGain = function () { return { connect: function () {}, gain: { value: 0, setValueAtTime: function () {}, exponentialRampToValueAtTime: function () {}, linearRampToValueAtTime: function () {} } }; };
+    this.createOscillator = function () { return { connect: function () {}, start: function () {}, stop: function () {}, frequency: { value: 0 }, type: '' }; };
+    this.suspend = function () { self.state = 'suspended'; log.push('parked'); return Promise.resolve(); };
+    this.resume = function () { self.state = 'running'; log.push('back'); return Promise.resolve(); };
+  }
+  var ctx = {
+    console: console, setTimeout: setTimeout, clearTimeout: clearTimeout,
+    Math: Math, Date: Date, String: String, Number: Number, Object: Object, Array: Array, Promise: Promise,
+    HS: { storage: { state: { settings: { sound: true } } } },
+    window: { AudioContext: Ctx }
+  };
+  ctx.window.window = ctx.window;
+  vm.createContext(ctx);
+  vm.runInContext(AUDIO_SRC, ctx);
+  ctx.HS.audio.unlock();                        // a context is alive, as it is during a lesson
+  return { audio: ctx.HS.audio, log: log };
+}
 
 /** A fresh speech.js on a fake device, with fake recognisers and a counted getUserMedia.
     opts.noRecogniser — a browser like Firefox, with no speech recognition at all.
@@ -31,7 +59,7 @@ var SRC = fs.readFileSync(path.join(__dirname, '..', 'js', 'speech.js'), 'utf8')
     opts.micWorks     — the microphone opens and carries sound, as it does on the phone in hand. */
 function device(opts) {
   opts = opts || {};
-  var gumCalls = 0, recs = [], saved = 0, audio = [], tracksLive = 1;
+  var gumCalls = 0, recs = [], saved = 0, audio = [], buzzes = [], tracksLive = 1;
   function Rec() { recs.push(this); }
   Rec.prototype.start = function () { this.started = true; };
   Rec.prototype.stop = function () { if (this.onend) this.onend(); };
@@ -46,6 +74,7 @@ function device(opts) {
                                           listen: opts.listen === false ? false : true } },
                      save: function () { saved++; } } },
     navigator: { userAgent: 'check-speech', onLine: !opts.offline,
+      vibrate: function (p) { buzzes.push(p); return true; },
       mediaDevices: { getUserMedia: function () {
         gumCalls++;
         if (!opts.micWorks) return Promise.reject(Object.assign(new Error('refused'), { name: 'NotAllowedError' }));
@@ -69,7 +98,7 @@ function device(opts) {
   vm.runInContext(SRC, ctx);
   return { speech: ctx.HS.speech, recs: recs, mics: function () { return gumCalls; },
            warmup: function () { return ctx.HS.storage.state.settings.micWarmup; },
-           saves: function () { return saved; }, audio: audio,
+           saves: function () { return saved; }, audio: audio, buzzes: buzzes,
            listenSetting: function () { return ctx.HS.storage.state.settings.listen; },
            micHeld: function () { return tracksLive > 0; } };
 }
@@ -145,14 +174,17 @@ Promise.resolve()
     });
   })
   .then(function () {
+    /* Cut off in the middle of a sentence looks exactly like this: heard, then nothing. */
     return listening('you spoke, but no words came out', function (p) {
-      return p.rec(0).then(function (rec) {
-        rec.onaudiostart(); rec.onsoundstart(); rec.onspeechstart(); rec.onspeechend(); rec.onend();
-      });
+      return p.rec(0).then(function (a) {
+        a.onaudiostart();
+        return p.go().then(function () { a.onsoundstart(); a.onspeechstart(); a.onspeechend(); a.onend(); });
+      }).then(function () { return p.rec(1); })
+        .then(function (b) { b.onaudiostart(); b.onend(); });
     }, function (got, ui) {
       ok('reports no-speech', got.err === 'no-speech', got.err);
       ok('says a voice WAS heard, so the screen can say the right thing', got.seen.voice === true, got.seen);
-      ok('and does not try again — the recogniser was plainly working', ui.recs.length === 1, ui.recs.length);
+      ok('and it is given another go rather than blamed on your diction', ui.recs.length === 2, ui.recs.length);
     });
   })
   .then(function () {
@@ -326,8 +358,8 @@ Promise.resolve()
     }, { android: true, warmup: 2000 });
   })
   .then(function () {
-    /* Android: the page must fall silent while the recogniser listens, and speak up again after. */
-    return listening('the page falls silent while Android listens', function (p) {
+    /* Android: the page falls silent before anything starts listening, and stays that way. */
+    return listening('the page falls silent before Android listens', function (p) {
       return p.rec(0).then(function (rec) {
         rec.onaudiostart();
         return p.go().then(function () {
@@ -337,10 +369,15 @@ Promise.resolve()
       });
     }, function (got, ui) {
       ok('the answer is heard', got.alts[0] === 'bonjour', got.alts);
-      ok('the sound output was parked once listening began', ui.dev.audio[0] === 'hush 500', ui.dev.audio);
-      ok('after the beep had time to finish', /hush 500/.test(ui.dev.audio.join()));
-      ok('and brought back when it finished', ui.dev.audio.indexOf('unhush') > 0, ui.dev.audio);
-      ok('the trace says so', /parking the sound output/.test(ui.trace), ui.trace);
+      ok('the output was parked at once, not part-way through', ui.dev.audio[0] === 'hush 0', ui.dev.audio);
+      ok('parked exactly once, so the route never changes under a live session',
+        ui.dev.audio.filter(function (x) { return /^hush/.test(x); }).length === 1, ui.dev.audio);
+      ok('and brought back when the listen finished', ui.dev.audio[ui.dev.audio.length - 1] === 'unhush', ui.dev.audio);
+      ok('the trace says so, before the recogniser was started',
+        ui.trace.indexOf('parking the sound output') < ui.trace.indexOf('start'), ui.trace);
+      ok('the go-ahead was a buzz, since the beep could not play', ui.dev.buzzes[0] === 60, ui.dev.buzzes);
+      ok('and being heard buzzed too', JSON.stringify(ui.dev.buzzes[1]) === '[25,45,25]', ui.dev.buzzes);
+      ok('so the screen calls it a buzz', ui.speech.goSignal() === 'buzz', ui.speech.goSignal());
     }, { android: true });
   })
   .then(function () {
@@ -352,6 +389,8 @@ Promise.resolve()
       });
     }, function (got, ui) {
       ok('nothing was parked', ui.dev.audio.length === 0, ui.dev.audio);
+      ok('nothing buzzed', ui.dev.buzzes.length === 0, ui.dev.buzzes);
+      ok('and the screen still says beep', ui.speech.goSignal() === 'beep', ui.speech.goSignal());
     }, { safari: true });
   })
   .then(function () {
@@ -421,6 +460,30 @@ Promise.resolve()
     ok('canListen() says so up front', d.speech.canListen() === false);
     ok('and a listen answers "unsupported" rather than looking silent',
       got && got.err === 'unsupported' && got.alts.length === 0 && !!got.seen, got);
+  })
+  .then(function () {
+    /* Parking the speakers must happen there and then. A timer, however short, would park them a
+       tick after the recogniser had started — changing the audio route under a live session, which
+       is what killed it mid-sentence. */
+    var sp = speakers();
+    console.log('\nparking the speakers happens at once');
+    var back = sp.audio.hush(0);
+    ok('parked before the call even returns', sp.log.join() === 'parked', sp.log);
+    sp.audio.cue('listen');
+    ok('and nothing new is played while they are parked', sp.log.join() === 'parked', sp.log);
+    back();
+    ok('brought back when released', sp.log.join() === 'parked,back', sp.log);
+    sp.audio.cue('done');
+    ok('after which sound plays again', true);
+
+    var sp2 = speakers();
+    var back2 = sp2.audio.hush(300);
+    ok('a delay is still honoured when one is asked for', sp2.log.length === 0, sp2.log);
+    back2();
+    ok('and releasing before it lands parks nothing at all', sp2.log.length === 0, sp2.log);
+    return wait(360).then(function () {
+      ok('not even later', sp2.log.length === 0, sp2.log);
+    });
   })
   .then(function () {
     console.log(fails ? '\n' + fails + ' check(s) FAILED' : '\nall checks passed');

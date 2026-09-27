@@ -437,14 +437,14 @@ HS.exercises = (function () {
         mic.classList.add('waiting');
         label('Wait…');
         status.className = 'speak-status';
-        status.textContent = 'Getting the microphone ready — wait for the beep…';
+        status.textContent = 'Getting the microphone ready — wait for the ' + HS.speech.goSignal() + '…';
       }
       else if (state === 'ready' || state === 'again') {
         mic.classList.remove('waiting');
         label('Listening…');
         HS.audio.cue('listen');
         status.className = 'speak-status';
-        status.textContent = state === 'again' ? 'Nothing came back — once more, after the beep'
+        status.textContent = state === 'again' ? 'Nothing came back — once more, after the ' + HS.speech.goSignal()
                                               : 'Listening — say it now';
       }
       else if (state === 'sound') { status.textContent = 'Picking something up…'; }
@@ -474,7 +474,7 @@ HS.exercises = (function () {
         status.textContent = 'The microphone never opened. Something else may be using it, or ' + HS.platform.browserName() + ' isn’t allowed to.';
         showHelp({ words: false });
       } else {
-        status.textContent = 'I didn’t hear anything. Speak up right after the beep — the ring moves when the microphone is really picking you up.';
+        status.textContent = 'I didn’t hear anything. Speak up right after the ' + HS.speech.goSignal() + ' — the ring moves when the microphone is really picking you up.';
       }
       if (misses >= 2) { showHelp({ words: words }); said.hidden = false; }
     }

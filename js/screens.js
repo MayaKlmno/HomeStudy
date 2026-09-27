@@ -539,10 +539,10 @@ HS.screens = (function () {
                 on: function (state, info) {
                   /* Showing each stage on purpose: the wait before the beep is the thing people
                      need to see, because talking during it is what makes half a sentence arrive. */
-                  if (state === 'starting') out.textContent = '⏳ Getting the microphone ready — wait for the beep…';
+                  if (state === 'starting') out.textContent = '⏳ Getting the microphone ready — wait for the ' + HS.speech.goSignal() + '…';
                   else if (state === 'ready' || state === 'again') {
                     HS.audio.cue('listen');
-                    out.textContent = state === 'again' ? '🎤 Once more — say anything after the beep'
+                    out.textContent = state === 'again' ? '🎤 Once more — say anything after the ' + HS.speech.goSignal()
                                                         : '🎤 Listening — say anything now';
                   }
                   else if (state === 'voice') { meter.classList.add('hearing'); out.textContent = '🎙 I can hear you'; }

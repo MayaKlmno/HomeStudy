@@ -184,10 +184,20 @@ HS.speech = (function () {
   }
   var GO_ANYWAY = 1800;               // no news from the recogniser: go ahead regardless
 
-  /* Only Android has shown the recogniser going deaf while this page is playing sound, and the
-     cost is losing the "I can hear you" beep while it listens — so only Android pays it. */
+  /* Only Android has shown the recogniser going deaf while this page is playing sound, so only
+     Android has its speakers parked — and only Android can buzz instead, which is what it gets
+     in place of the beeps it can no longer play. */
   function hushWhileListening() {
     return !!(HS.platform && HS.platform.os === 'android');
+  }
+  /** 'buzz' or 'beep' — what the go-ahead will actually be here, so screens can say so. */
+  function goSignal() {
+    return (hushWhileListening() && navigator.vibrate) ? 'buzz' : 'beep';
+  }
+  /** A short buzz, where the speakers are parked and a beep would go unheard. */
+  function buzz(pattern) {
+    if (!hushWhileListening() || !navigator.vibrate) return;
+    try { navigator.vibrate(pattern); } catch (e) {}
   }
 
   /**
@@ -244,7 +254,10 @@ HS.speech = (function () {
     function state(name, level) {
       if (name === 'audio') seen.audio = true;
       if (name === 'sound') seen.sound = seen.audio = true;
-      if (name === 'voice') seen.voice = seen.sound = seen.audio = true;
+      if (name === 'voice') {
+        if (!seen.voice) buzz([25, 45, 25]);      // "I can hear you", for a phone that can't beep
+        seen.voice = seen.sound = seen.audio = true;
+      }
       bar.to(level);
     }
 
@@ -259,7 +272,9 @@ HS.speech = (function () {
         else learnWarmup(-100);                   // it worked first time: ease back down
         return end(null, alts);
       }
-      if (!aborted && tries === 1 && !HOPELESS[err] && !seen.voice) {
+      /* Empty-handed is empty-handed: even when it plainly heard you, nothing came of it, and
+         being cut off in the middle of a sentence is exactly what that looks like. */
+      if (!aborted && tries === 1 && !HOPELESS[err]) {
         note('nothing back, trying a plain recogniser');
         return attempt(true);
       }
@@ -277,11 +292,8 @@ HS.speech = (function () {
       clearTimeout(goAnyway);
       note('go');
       bar.to(0.12);
-      on(began());                    // the caller beeps here — then the page falls silent
-      if (hushWhileListening() && HS.audio && HS.audio.hush && !unhush) {
-        note('parking the sound output');
-        unhush = HS.audio.hush(500);  // long enough for that beep to finish ringing
-      }
+      buzz(60);                       // on a parked phone this is the whole go-ahead
+      on(began());
     }
     /* The microphone is open. Wait out the gap behind it, then give the go-ahead. */
     function armGo() {
@@ -344,6 +356,16 @@ HS.speech = (function () {
         note('start threw');
         attemptOver('error', []);
       }
+    }
+
+    /* Park the sound output before anything starts listening, and leave it parked until the whole
+       listen is over. It used to be parked half a second in, once the go-ahead beep had finished
+       ringing — and suspending the output under a live recogniser changes the audio route beneath
+       it, which ends the session on the spot. It heard you, then died mid-sentence with nothing to
+       show. So the page goes quiet first, stays quiet, and the go-ahead is a buzz instead. */
+    if (hushWhileListening() && HS.audio && HS.audio.hush) {
+      note('parking the sound output');
+      unhush = HS.audio.hush(0);
     }
 
     /* No network and a recogniser that lives on a server: say so rather than listen for nothing. */
@@ -495,6 +517,6 @@ HS.speech = (function () {
   return { say: say, stop: stop, unlock: unlock, setLang: setLang, available: available,
            languageName: languageName, canListen: canListen, listen: listen,
            stopListening: stopListening, probe: probe, lastTrace: lastTrace,
-           listeningOff: listeningOff, setListening: setListening,
+           listeningOff: listeningOff, setListening: setListening, goSignal: goSignal,
            closeness: closeness, grade: grade };
 })();

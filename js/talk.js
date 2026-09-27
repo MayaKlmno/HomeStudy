@@ -279,11 +279,11 @@ HS.talkMode = (function () {
             /* The beep is the promise that you are being recorded, so it waits for the recogniser
                to really be listening. Beeping when the microphone merely opens loses your first
                words — and in the car the beep is all you have to go on. */
-            if (state === 'starting') show(s, { status: '⏳ Getting ready — wait for the beep' });
+            if (state === 'starting') show(s, { status: '⏳ Getting ready — wait for the ' + HS.speech.goSignal() });
             else if (state === 'ready' || state === 'again') {
               arm();
               HS.audio.cue('listen');
-              show(s, { status: state === 'again' ? '🎤 Once more — after the beep' : '🎤 Listening — say it now' });
+              show(s, { status: state === 'again' ? '🎤 Once more — after the ' + HS.speech.goSignal() : '🎤 Listening — say it now' });
             }
             else if (state === 'sound') { alive(); show(s, { status: 'Picking something up…' }); }
             else if (state === 'voice') {
@@ -369,9 +369,9 @@ HS.talkMode = (function () {
       showMicHelp(s);
       return narrate(s, HS.platform.browserName() + ' can’t listen to you, so I’ll pause for your answer and then say it.');
     }
-    show(s, { phase: 'Microphone check', who: '', text: 'Say anything after the beep',
+    show(s, { phase: 'Microphone check', who: '', text: 'Say anything after the ' + HS.speech.goSignal(),
               en: 'The bar moves when I can hear you.', status: '', reading: '', score: '' });
-    return narrate(s, 'First, a quick microphone check. After the beep, say anything at all.')
+    return narrate(s, 'First, a quick microphone check. After the ' + HS.speech.goSignal() + ', say anything at all.')
       .then(function () { return hear(s); })
       .then(function (r) {
         if (s.skip || s.stopped) return;
