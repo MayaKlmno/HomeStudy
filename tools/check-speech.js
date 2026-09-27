@@ -10,6 +10,8 @@
    Two: an attempt that comes back empty-handed must be retried once with a bare recogniser,
    because Chrome on Android has been seen to return nothing when asked for interim results and
    several alternatives.
+   Five: a held recording — press to start, press to stop — must gather up everything said between
+   the two presses, pauses and all, and must not finish until it is stopped.
    Four: nothing else may hold the microphone while the recogniser listens, and on Android the page
    goes silent for the whole of it — a page making a noise has been seen to leave the recogniser
    deaf. Silent means the volume down, never the audio session suspended: suspending it halfway
@@ -119,8 +121,17 @@ function ok(name, cond, extra) {
   console.log((cond ? '  ok   ' : '  FAIL ') + name + (extra === undefined ? '' : '  → ' + JSON.stringify(extra)));
   if (!cond) fails++;
 }
-function final(text) { return { results: [Object.assign([{ transcript: text }], { isFinal: true })] }; }
-function interim(text) { return { results: [Object.assign([{ transcript: text }], { isFinal: false })] }; }
+/* A recogniser hands back everything it has said so far, and says where the new part starts. */
+function results(list) {
+  return { resultIndex: 0,
+           results: list.map(function (r) {
+             return Object.assign(r.alts.map(function (t) { return { transcript: t }; }), { isFinal: r.isFinal });
+           }) };
+}
+function final(text) { return results([{ alts: [text], isFinal: true }]); }
+function interim(text) { return results([{ alts: [text], isFinal: false }]); }
+/** What a recogniser that keeps going sends: the pieces so far, and where the new part starts. */
+function more(from, list) { return Object.assign(results(list), { resultIndex: from }); }
 function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
 /**
@@ -129,14 +140,17 @@ function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
  *   stop()  — the caller giving up, as a timeout or a second tap would
  * Then checks the single outcome the app reported.
  */
-function listening(name, drive, check, devOpts) {
-  var d = device(devOpts), levels = [], states = [], got = null;
+function listening(name, drive, check, devOpts, listenOpts) {
+  var d = device(devOpts), levels = [], states = [], words = [], got = null;
   var halt = d.speech.listen('fr-FR', function (err, alts, seen) {
     got = { err: err, alts: alts, seen: seen };
-  }, {
-    on: function (s, info) { states.push(info === undefined ? s : s + ':' + info); },
+  }, Object.assign({
+    on: function (s, info) {
+      states.push(info === undefined ? s : s + ':' + info);
+      if (s === 'words') words.push(info);
+    },
     level: function (v) { levels.push(v); }
-  });
+  }, listenOpts || {}));
   function rec(i) {
     return (function look(n) {
       if (d.recs[i]) return Promise.resolve(d.recs[i]);
@@ -156,7 +170,7 @@ function listening(name, drive, check, devOpts) {
     .then(function () { return wait(120); })
     .then(function () {
       console.log('\n' + name);
-      check(got, { levels: levels, states: states, mics: d.mics(), recs: d.recs,
+      check(got, { levels: levels, states: states, words: words, mics: d.mics(), recs: d.recs,
                    trace: d.speech.lastTrace(), speech: d.speech, dev: d });
     });
 }
@@ -430,6 +444,91 @@ Promise.resolve()
     d.speech.setListening(true);
     ok('and it can be switched back on', d.speech.canListen() === true && d.listenSetting() === true);
     ok('which is remembered', d.saves() === 1, d.saves());
+  })
+  .then(function () {
+    /* Press to start, speak, pause, speak again, press to stop: all of it is one answer. */
+    return listening('a recording held open across a pause', function (p) {
+      return p.rec(0).then(function (rec) {
+        rec.onaudiostart();
+        return p.go().then(function () {
+          rec.onspeechstart();
+          rec.onresult(more(0, [{ alts: ['bonjour'], isFinal: true }]));
+          rec.onspeechend();                     // a pause, not the end
+          return wait(40).then(function () {
+            rec.onresult(more(1, [{ alts: ['bonjour'], isFinal: true },
+                                   { alts: ['monsieur'], isFinal: true }]));
+            return wait(40);
+          });
+        });
+      });
+    }, function (got, ui) {
+      ok('it did not finish on the pause', got === null, got);
+      ok('and showed what it had so far', ui.words[ui.words.length - 1] === 'bonjour monsieur', ui.words);
+      ok('nor did it start a second recogniser', ui.recs.length === 1, ui.recs.length);
+    }, null, { hold: true });
+  })
+  .then(function () {
+    return listening('and handed over when it was stopped', function (p) {
+      return p.rec(0).then(function (rec) {
+        rec.onaudiostart();
+        return p.go().then(function () {
+          rec.onspeechstart();
+          rec.onresult(more(0, [{ alts: ['bonjour', 'bonsoir'], isFinal: true }]));
+          rec.onresult(more(1, [{ alts: ['bonjour', 'bonsoir'], isFinal: true },
+                                { alts: ['monsieur', 'messieurs'], isFinal: true }]));
+          p.stop();                              // the second press
+        });
+      });
+    }, function (got, ui) {
+      ok('the whole thing comes back as one answer', got.alts[0] === 'bonjour monsieur', got.alts);
+      ok('with the second choices offered as a whole too', got.alts[1] === 'bonsoir messieurs', got.alts);
+      ok('and no error, since you meant to stop', got.err === null, got.err);
+      ok('the recogniser was asked to keep going', ui.recs[0].continuous === true, ui.recs[0].continuous);
+    }, null, { hold: true });
+  })
+  .then(function () {
+    /* A recogniser that gives up on its own is not you pressing stop. */
+    return listening('the recogniser gives up while the button is still held', function (p) {
+      return p.rec(0).then(function (a) {
+        a.onaudiostart();
+        return p.go().then(function () { a.onend(); });       // gave up, nothing said yet
+      }).then(function () { return p.rec(1); })
+        .then(function (b) {
+          b.onresult(more(0, [{ alts: ['bonjour'], isFinal: true }]));
+          p.stop();
+        });
+    }, function (got, ui) {
+      ok('it quietly picks the recording back up', ui.recs.length === 2, ui.recs.length);
+      ok('without a second go-ahead, since you never stopped',
+        ui.states.filter(function (x) { return x === 'ready' || x === 'again'; }).length === 1, ui.states);
+      ok('and without telling you to wait again mid-recording',
+        ui.states.filter(function (x) { return x === 'starting'; }).length === 1, ui.states);
+      ok('and what you said afterwards still counts', got.alts[0] === 'bonjour', got.alts);
+      ok('the trace says it carried on', /carrying on/.test(ui.trace), ui.trace);
+    }, null, { hold: true });
+  })
+  .then(function () {
+    return listening('held open, and nothing said at all', function (p) {
+      return p.rec(0).then(function (rec) {
+        rec.onaudiostart();
+        return p.go().then(function () { p.stop(); });
+      });
+    }, function (got, ui) {
+      ok('it says it heard nothing', got.err === 'no-speech', got.err);
+      ok('and does not try again behind you', ui.recs.length === 1, ui.recs.length);
+    }, null, { hold: true });
+  })
+  .then(function () {
+    /* Without hold, one utterance is the whole answer, as talk mode needs. */
+    return listening('left to itself, it still stops at the first pause', function (p) {
+      return p.rec(0).then(function (rec) {
+        rec.onaudiostart();
+        return p.go().then(function () { rec.onresult(final('bonjour')); });
+      });
+    }, function (got, ui) {
+      ok('the answer comes back on its own', got.alts[0] === 'bonjour', got.alts);
+      ok('and the recogniser was not asked to keep going', !ui.recs[0].continuous, ui.recs[0].continuous);
+    });
   })
   .then(function () {
     var d = device(), ended = [];

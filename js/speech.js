@@ -185,6 +185,8 @@ HS.speech = (function () {
     HS.storage.save();
   }
   var GO_ANYWAY = 1800;               // no news from the recogniser: go ahead regardless
+  var HOLD_LONGEST = 60000;           // a held recording nobody stopped
+  var HOLD_RESTARTS = 12;             // times to pick a held recording back up after it gives up
 
   /* Only Android has shown the recogniser going deaf while this page is playing sound, so only
      Android goes silent to listen — and only Android can buzz instead, which is what it gets in
@@ -220,6 +222,12 @@ HS.speech = (function () {
    *   'quiet'  — you stopped speaking; it is working out the answer
    *   'again'  — the first try came back empty; listening again with a plainer recogniser
    * opts.level(0–1) drives a level bar or a ring, from those same events — see pulse().
+   *
+   * opts.hold — keep listening until the returned stop function is called, instead of stopping at
+   *   the first pause. Everything said in between is gathered up, pauses and all, and the recogniser
+   *   is quietly restarted if it gives up on its own. This is what a press-to-start, press-to-stop
+   *   button wants: when the end of the recording is a decision rather than a guess, none of the
+   *   endpointing that cut answers off in the middle can get in the way.
    */
   function listen(tag, cb, opts) {
     opts = opts || {};
@@ -234,16 +242,36 @@ HS.speech = (function () {
     var rec = null, finished = false, aborted = false, tries = 0, t0 = Date.now();
     var bar = pulse(opts.level);
     var live = false, graceTimer = null, goAnyway = null, unhush = null;
+    /* Each finished piece of what you said, as the recogniser's list of guesses for it. In hold
+       mode there can be several — a pause does not mean you have finished. */
+    var segments = [], restarts = 0, capTimer = null;
     trace = { lines: [], err: null, results: 0, lang: use, plain: preferPlain, online: !offline(),
               tries: 0, warmup: warmup() };
 
     function note(what) { trace.lines.push(Math.round(Date.now() - t0) + 'ms ' + what); }
+
+    /** The best reading of everything said so far. */
+    function heardSoFar() { return segments.map(function (a) { return a[0]; }).join(' '); }
+
+    /* Guesses for the whole thing: for one piece, the recogniser's own list; for several, its best
+       reading, then its second choices, and so on. */
+    function gathered() {
+      if (!segments.length) return [];
+      if (segments.length === 1) return segments[0].slice();
+      var depth = segments.reduce(function (n, a) { return Math.max(n, a.length); }, 0);
+      var out = [];
+      for (var k = 0; k < Math.min(depth, 3); k++) {
+        out.push(segments.map(function (a) { return a[Math.min(k, a.length - 1)]; }).join(' '));
+      }
+      return out;
+    }
 
     function end(err, alts) {
       if (finished) return;
       finished = true;
       clearTimeout(graceTimer);
       clearTimeout(goAnyway);
+      clearTimeout(capTimer);
       if (unhush) { unhush(); unhush = null; }
       if (active === halt) active = null;
       bar.stop();
@@ -275,8 +303,10 @@ HS.speech = (function () {
         return end(null, alts);
       }
       /* Empty-handed is empty-handed: even when it plainly heard you, nothing came of it, and
-         being cut off in the middle of a sentence is exactly what that looks like. */
-      if (!aborted && tries === 1 && !HOPELESS[err]) {
+         being cut off in the middle of a sentence is exactly what that looks like. Not in hold
+         mode, though: you decided the recording was over, so starting it again behind you would
+         be a surprise rather than a help. */
+      if (!aborted && !opts.hold && tries === 1 && !HOPELESS[err]) {
         note('nothing back, trying a plain recogniser');
         return attempt(true);
       }
@@ -307,19 +337,24 @@ HS.speech = (function () {
     /* Anything that proves it is really listening means the wait is over, whatever the clock says. */
     function proofOfLife() { goLive(); }
 
-    function attempt(plain) {
-      tries++;
+    /** opts.again: the same recording carrying on, not a new try — the go-ahead already happened. */
+    function attempt(plain, again) {
+      if (!again) {
+        tries++;
+        trace.tries = tries;
+        live = false;
+        clearTimeout(graceTimer); graceTimer = null;
+        clearTimeout(goAnyway);
+      }
       trace.plain = !!plain;
-      trace.tries = tries;
-      live = false;
-      clearTimeout(graceTimer); graceTimer = null;
-      clearTimeout(goAnyway);
       try {
         rec = new Rec();
         rec.lang = use;
         /* A bare recogniser: one guess, final results only. */
         rec.interimResults = !plain;
-        rec.continuous = false;
+        /* Held recordings must survive a pause: without this the recogniser decides for itself
+           that you have finished, which is the whole thing the button is there to replace. */
+        rec.continuous = !!opts.hold;
         if (!plain) rec.maxAlternatives = 5;
         rec.onstart = function () { note('startevent'); armGo(); };
         rec.onaudiostart = function () { note('audiostart'); state('audio', 0.1); armGo(); };
@@ -327,29 +362,53 @@ HS.speech = (function () {
         rec.onspeechstart = function () { note('speechstart'); proofOfLife(); state('voice', 0.85); on('voice'); };
         rec.onspeechend = function () { note('speechend'); bar.to(0.12); on('quiet'); };
         rec.onresult = function (e) {
-          var alts = [], interim = '', isFinal = false;
-          for (var i = 0; i < e.results.length; i++) {
-            if (!e.results[i].isFinal) { interim += e.results[i][0].transcript; continue; }
-            isFinal = true;
-            for (var j = 0; j < e.results[i].length; j++) alts.push(e.results[i][j].transcript);
+          /* Only what is new since last time: a recogniser that keeps going hands back everything
+             it has ever said, so counting from the start would say it all twice. Where it doesn't
+             say what is new, the count of finished pieces already gathered says it instead. */
+          var interim = '', got = false;
+          var from = Math.max(e.resultIndex || 0, segments.length);
+          for (var i = from; i < e.results.length; i++) {
+            var res = e.results[i];
+            if (!res.isFinal) { interim += res[0].transcript; continue; }
+            var alts = [];
+            for (var j = 0; j < res.length; j++) alts.push(res[j].transcript);
+            segments.push(alts);
+            got = true;
           }
-          if (!isFinal) {
+          proofOfLife();                         // words are coming in: it is plainly listening
+          state('voice', 0.9);                   // and hearing you
+          if (interim) {
             note('interim words');
-            proofOfLife();                       // words are coming in: it is plainly listening
-            state('voice', 0.9);                 // and hearing you
-            on('words', interim);
+            on('words', (heardSoFar() + ' ' + interim).trim());
             return;
           }
+          if (!got) return;
           note('result');
-          attemptOver(null, alts);
+          if (opts.hold) { on('words', heardSoFar()); return; }   // you say when it is finished
+          attemptOver(null, gathered());
         };
         rec.onerror = function (e) {
           note('error ' + ((e && e.error) || '?'));
           attemptOver((e && e.error) || 'error', []);
         };
-        rec.onend = function () { note('end'); attemptOver('no-speech', []); };
+        rec.onend = function () {
+          note('end');
+          /* In hold mode the recogniser giving up is not you finishing: pick it up again, unless
+             you have stopped it or there is something worth handing back. */
+          if (opts.hold && !aborted && !finished) {
+            if (segments.length) return attemptOver(null, gathered());
+            if (restarts < HOLD_RESTARTS) {
+              restarts++;
+              note('it gave up, carrying on');
+              return attempt(trace.plain, true);
+            }
+          }
+          attemptOver(segments.length ? null : 'no-speech', gathered());
+        };
         note('start' + (plain ? ' (plain)' : ''));
-        on('starting');                          // asked, but not listening yet — don't speak
+        /* A held recording being picked back up is still the same recording: telling the screen to
+           wait again would turn the button back to "getting ready" in the middle of it. */
+        if (!again) on('starting');              // asked, but not listening yet — don't speak
         rec.start();
         active = halt;
         /* A browser that never says it has started must not leave you waiting for a beep. */
@@ -377,6 +436,12 @@ HS.speech = (function () {
       return function () {};
     }
 
+    if (opts.hold) {
+      capTimer = setTimeout(function () {
+        note('held too long, stopping');
+        halt();
+      }, HOLD_LONGEST);
+    }
     attempt(preferPlain);
     return halt;
   }

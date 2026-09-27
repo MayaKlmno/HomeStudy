@@ -39,10 +39,17 @@ Accessibility → Spoken Content → System Voice → Manage Voices → French /
 one the app shows the text instead, so nothing breaks. Settings has a 🔊 Test button for each
 language. On an iPhone, the voice plays even with the silent switch on (iOS 16.4+).
 
-Every level also has a speaking exercise: tap the mic and say the sentence. It uses the browser's
-speech recognition (on iPhone: Settings → General → Keyboard → Enable Dictation) and grades
-leniently. Where recognition isn't available it becomes "say it aloud, then tap I said it". Turn
-it off in Settings, or tap "Can't speak now" to skip it for an hour.
+Every level also has a speaking exercise, and the microphone button works like a recorder: **tap it
+once to start, tap it again when you have finished.** It goes grey while the recogniser wakes up,
+turns green when it is really recording, and stays green — through pauses, through a phrase it thinks
+is complete, through the recogniser quietly giving up and being picked back up — until you tap to
+stop. Everything said between the two taps is gathered into one answer. Nothing is guessing where
+your sentence ends any more, which is what used to cut answers off halfway.
+
+It uses the browser's speech recognition (on iPhone: Settings → General → Keyboard → Enable
+Dictation) and grades leniently. Where recognition isn't available it becomes "say it aloud, then tap
+I said it". Turn it off in Settings, or tap "Can't speak now" to skip it for an hour. Talk mode is
+hands-free and has no button to tap, so there it still decides for itself when you have stopped.
 
 **Wait for the beep — the beep now waits for the recogniser.** A recogniser that runs on a server
 reports that it has started well before it can hear anything: the microphone is open, but the sound

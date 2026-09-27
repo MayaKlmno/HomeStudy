@@ -428,6 +428,7 @@ HS.exercises = (function () {
       if (!on) { mic.classList.remove('hearing', 'waiting'); ring.style.transform = ''; live.textContent = ''; }
     }
     function label(t) { mic.querySelector('.mic-label').textContent = t; }
+    function icon(t) { mic.querySelector('.mic-icon').textContent = t; }
 
     /* What the microphone is doing, in words, in sound, and in the ring around the mic. */
     function micState(state, info) {
@@ -435,26 +436,28 @@ HS.exercises = (function () {
          second one gets the beep, or you talk into a recogniser that isn't hearing you yet. */
       if (state === 'starting') {
         mic.classList.add('waiting');
+        icon('⏳');
         label('Wait…');
         status.className = 'speak-status';
         status.textContent = 'Getting the microphone ready — wait for the ' + HS.speech.goSignal() + '…';
       }
       else if (state === 'ready' || state === 'again') {
+        /* Green means recording: from here until you tap again, everything you say is taken down. */
         mic.classList.remove('waiting');
-        label('Listening…');
+        icon('⏹');
+        label('Tap to stop');
         HS.audio.cue('listen');
         status.className = 'speak-status';
-        status.textContent = state === 'again' ? 'Nothing came back — once more, after the ' + HS.speech.goSignal()
-                                              : 'Listening — say it now';
+        status.textContent = 'Recording — say the sentence, then tap the button to stop.';
       }
-      else if (state === 'sound') { status.textContent = 'Picking something up…'; }
+      else if (state === 'sound') { status.textContent = 'Recording — picking something up…'; }
       else if (state === 'voice') {
         if (!heardVoice) { heardVoice = true; HS.audio.cue('hearing'); }
         mic.classList.add('hearing');
         status.className = 'speak-status good';
-        status.textContent = '🎙 I can hear you';
+        status.textContent = '🎙 I can hear you — tap the button when you have finished';
       } else if (state === 'words') { live.textContent = info || ''; }
-      else if (state === 'quiet') { status.className = 'speak-status'; status.textContent = 'Got it — checking…'; }
+      else if (state === 'quiet') { status.className = 'speak-status'; status.textContent = 'Keep going, or tap to stop…'; }
     }
 
     /* Nothing came back. Say which of the two very different reasons it was, because the fix
@@ -480,7 +483,12 @@ HS.exercises = (function () {
     }
 
     function toggle() {
-      if (stopFn) { stopFn(); return; }
+      if (stopFn) {                            // the second tap: you decide the recording is over
+        status.className = 'speak-status';
+        status.textContent = 'Checking what you said…';
+        stopFn();
+        return;
+      }
       HS.speech.unlock();
       HS.audio.unlock();
       status.textContent = '';
@@ -490,6 +498,7 @@ HS.exercises = (function () {
       stopFn = HS.speech.listen(tag, function (err, alts, seen) {
         stopFn = null;
         setListening(false);
+        icon('🎤');
         HS.audio.cue('done');
         if (err && err !== 'no-speech') {
           said.hidden = false;
@@ -524,6 +533,9 @@ HS.exercises = (function () {
         status.textContent = 'I heard: “' + best.heard + '”. Listen once more and try again.';
         if (tries >= 3) said.hidden = false;     // don't let a fussy recogniser block the lesson
       }, {
+        /* You say when the recording ends, not the recogniser: no answer gets cut off in the
+           middle, and a pause for thought costs nothing. */
+        hold: true,
         on: micState,
         level: function (v) {
           ring.style.transform = 'scale(' + (1 + v * 0.55).toFixed(2) + ')';

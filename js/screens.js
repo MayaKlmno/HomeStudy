@@ -492,7 +492,7 @@ HS.screens = (function () {
         var bar = el('i');
         var meter = el('div.talk-meter', { style: { marginTop: '8px', width: '100%' } }, [bar]);
         var help = el('div.speak-help');
-        var stopFn = null;
+        var stopFn = null, testBtn = null;
 
         var helpFor = null, helpTrace = null;
         function showHelp(opts) {
@@ -516,13 +516,18 @@ HS.screens = (function () {
                 text: 'For speaking exercises and talk mode · ' + HS.platform.label()
                       + (s.settings.micWarmup ? ' · waits ' + s.settings.micWarmup + 'ms for the recogniser' : '') })]),
             el('div.spacer'),
-            HS.speech.canListen() ? el('button.btn.ghost.sm', { type: 'button', onclick: function () {
-              if (stopFn) { stopFn(); return; }
+            HS.speech.canListen() ? testBtn = el('button.btn.ghost.sm', { type: 'button', onclick: function () {
+              if (stopFn) {                        // the second tap ends the recording
+                out.textContent = 'Checking what you said…';
+                stopFn();
+                return;
+              }
               HS.audio.unlock();
               meter.classList.add('on');
               out.textContent = 'Getting the microphone ready…';
               stopFn = HS.speech.listen('en-US', function (err, alts, seen) {
                 stopFn = null;
+                testBtn.textContent = '🎤 Test';
                 meter.classList.remove('on', 'hearing');
                 bar.style.width = '0%';
                 HS.audio.cue('done');
@@ -542,16 +547,20 @@ HS.screens = (function () {
                   : 'The microphone opened, but no words came back ✕.';
                 showHelp({ words: seen.voice || err === 'offline' || err === 'network' || seen.audio });
               }, {
+                hold: true,                        // you decide when the recording ends
                 on: function (state, info) {
                   /* Showing each stage on purpose: the wait before the beep is the thing people
                      need to see, because talking during it is what makes half a sentence arrive. */
-                  if (state === 'starting') out.textContent = '⏳ Getting the microphone ready — wait for the ' + HS.speech.goSignal() + '…';
-                  else if (state === 'ready' || state === 'again') {
-                    HS.audio.cue('listen');
-                    out.textContent = state === 'again' ? '🎤 Once more — say anything after the ' + HS.speech.goSignal()
-                                                        : '🎤 Listening — say anything now';
+                  if (state === 'starting') {
+                    testBtn.textContent = '⏳ Wait…';
+                    out.textContent = '⏳ Getting the microphone ready — wait for the ' + HS.speech.goSignal() + '…';
                   }
-                  else if (state === 'voice') { meter.classList.add('hearing'); out.textContent = '🎙 I can hear you'; }
+                  else if (state === 'ready' || state === 'again') {
+                    testBtn.textContent = '⏹ Stop';
+                    HS.audio.cue('listen');
+                    out.textContent = '🎤 Recording — say a whole sentence, then tap Stop.';
+                  }
+                  else if (state === 'voice') { meter.classList.add('hearing'); out.textContent = '🎙 I can hear you — tap Stop when you have finished'; }
                   else if (state === 'words') out.textContent = '“' + info + '”';
                 },
                 level: function (v) { bar.style.width = Math.round(v * 100) + '%'; }

@@ -4,4 +4,4 @@
 var HS = window.HS || {};
 window.HS = HS;
 
-HS.version = { build: 23, date: '2026-09-27' };
+HS.version = { build: 24, date: '2026-09-27' };
