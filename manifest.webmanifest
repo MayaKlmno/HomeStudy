@@ -1,7 +1,7 @@
 {
   "name": "HomeStudy",
   "short_name": "HomeStudy",
-  "description": "French and piano, one level at a time.",
+  "description": "French, Spanish, Japanese and Chinese, one level at a time.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

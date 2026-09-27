@@ -426,6 +426,9 @@ HS.tracks.piano = (function () {
 
   return {
     id: 'piano',
+    /* Parked while the four language tracks are finished. Delete this line to bring it back:
+       nothing else knows about piano, and progress already saved for it is untouched. */
+    hidden: true,
     name: 'Piano',
     icon: '🎹',
     color: '#1cb0f6',

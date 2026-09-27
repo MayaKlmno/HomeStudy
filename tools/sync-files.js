@@ -11,7 +11,7 @@ var root = path.join(__dirname, '..');
 var skipAt = process.argv.indexOf('--without');
 var skip = skipAt > 0 ? process.argv[skipAt + 1].split(',') : [];
 
-var CORE = ['util', 'platform', 'storage', 'speech', 'audio', 'staff', 'keyboard'];
+var CORE = ['util', 'version', 'platform', 'storage', 'speech', 'audio', 'staff', 'keyboard'];
 // Every language folder with a track.js, in a fixed order first, then any others alphabetically.
 var ORDER = ['french', 'spanish', 'japanese', 'chinese'];
 var LANGS = fs.readdirSync(path.join(root, 'js', 'tracks')).filter(function (d) {
@@ -62,6 +62,12 @@ sw = sw.replace(/homestudy-v\d+/, 'homestudy-v' + version)
        .replace(/var FILES = \[[\s\S]*?\];/, 'var FILES = [\n' + files.map(function (f) { return '  "' + f + '"'; }).join(',\n') + '\n];');
 fs.writeFileSync(swPath, sw);
 
+/* Same number in js/version.js, so Settings can show which build a phone is actually running. */
+var verPath = path.join(root, 'js', 'version.js');
+var today = new Date().toISOString().slice(0, 10);
+fs.writeFileSync(verPath, fs.readFileSync(verPath, 'utf8')
+  .replace(/HS\.version = \{[^}]*\};/, "HS.version = { build: " + version + ", date: '" + today + "' };"));
+
 var missing = files.filter(function (f) { return f !== './' && !fs.existsSync(path.join(root, f)); });
-console.log('index.html: ' + content.length + ' content scripts; sw.js: ' + files.length + ' files, cache v' + version);
+console.log('index.html: ' + content.length + ' content scripts; sw.js: ' + files.length + ' files, build ' + version + ' (' + today + ')');
 if (missing.length) { console.log('MISSING: ' + missing.join(', ')); process.exit(1); }

@@ -10,7 +10,9 @@ A Duolingo-style learning app you can open in a browser. Five tracks, 100 levels
 - **Chinese** — pinyin and tones first, then modern Mandarin from HSK 1 to HSK 3, with every quote
   taken from Sun Tzu's *The Art of War* (孙子兵法).
 - **Piano** — note reading, rhythm, intervals, chords, ear training and real pieces, played on an
-  on-screen keyboard.
+  on-screen keyboard. **Parked for now** while the four language tracks are finished: it is still
+  in the app but not offered. To bring it back, delete the `hidden: true` line near the bottom of
+  `js/tracks/piano/track.js` — nothing else knows about it, and progress already saved is untouched.
 
 Every language also has a **Talk mode**: 80 hands-free spoken dialogs for long drives (see below).
 
@@ -56,7 +58,15 @@ HomeStudy is a Progressive Web App, served from GitHub Pages at
 https://mayaklmno.github.io/HomeStudy/. On an iPhone, open that link in Safari, tap Share → Add to
 Home Screen, and it launches full-screen and works offline after the first visit. After changing any
 file, run `node tools/sync-files.js`: it rewrites the script tags in `index.html` and the offline file
-list in `sw.js` from what is on disk, and bumps the cache version so installed copies update.
+list in `sw.js` from what is on disk, and bumps the build number in both `sw.js` and `js/version.js`
+so installed copies update.
+
+**Which version is this phone running?** Settings shows `Build <n> · <date>`, taken from
+`js/version.js` — the same number as the offline cache name, so it is the code actually running, not
+the code on the server. An installed app serves itself from its own cache, so "I refreshed and
+nothing changed" is the normal way a new version fails to arrive. `Check for update` there fetches
+`sw.js` (the one file the app never caches), says which build the server has, and `Update now`
+pulls the new worker in and reloads onto it.
 
 ## How it works
 
@@ -121,6 +131,7 @@ sw.js                 service worker: offline cache
 styles/               base, layout, components, lesson
 js/
   util.js             DOM helpers, seeded RNG, text normalising
+  version.js          the build number Settings shows (written by tools/sync-files.js)
   platform.js         which device/browser this is, and how to allow the mic there
   storage.js          profiles and their progress in localStorage
   engine.js           lesson session: queue, hearts, XP, results
@@ -153,6 +164,7 @@ is always the same lesson.
 
 ## Status
 
-All five tracks are complete and playable: 500 levels, plus 320 talk-mode dialogs. Ideas still open —
-handwriting-free French accents on mobile, a two-handed grand-staff mode for piano, and per-unit
-progress badges.
+All five tracks are complete and playable: 500 levels, plus 320 talk-mode dialogs. The four language
+tracks are the ones on offer; piano is parked behind a one-line flag until they are finished. Ideas
+still open — handwriting-free French accents on mobile, a two-handed grand-staff mode for piano, and
+per-unit progress badges.

@@ -16,6 +16,16 @@ HS.screens = (function () {
     ]);
   }
 
+  /** Tracks a learner can open. A track with `hidden` is parked: still loaded, just not offered. */
+  function openTracks() {
+    return Object.keys(HS.tracks).filter(function (id) { return !HS.tracks[id].hidden; });
+  }
+  function trackOpen(id) { return !!HS.tracks[id] && !HS.tracks[id].hidden; }
+  /** Mistakes waiting from tracks that are still open — a parked track's don't come back. */
+  function openMistakes() {
+    return HS.storage.state.mistakes.filter(function (m) { return trackOpen(m.track); });
+  }
+
   /* ---------------- home ---------------- */
 
   function home() {
@@ -23,7 +33,7 @@ HS.screens = (function () {
     var today = HS.storage.todayXp();
     var pct = Math.min(100, Math.round(today / s.goal * 100));
 
-    var cards = el('div.tracks', {}, Object.keys(HS.tracks).map(function (id) {
+    var cards = el('div.tracks', {}, openTracks().map(function (id) {
       var t = HS.tracks[id];
       var doneN = HS.storage.completedCount(id);
       return el('button.track-card', { type: 'button', onclick: function () { HS.app.go('#/track/' + id); } }, [
@@ -37,7 +47,7 @@ HS.screens = (function () {
       ]);
     }));
 
-    var reviewCount = s.mistakes.length;
+    var reviewCount = openMistakes().length;
 
     return el('div', {}, [
       topbar(),
@@ -180,7 +190,7 @@ HS.screens = (function () {
 
   function trackScreen(id) {
     var t = HS.tracks[id];
-    if (!t) return home();
+    if (!t || t.hidden) return home();
     var st = HS.storage.track(id);
     var page = el('div.page', {});
 
@@ -277,7 +287,7 @@ HS.screens = (function () {
   /* ---------------- practice ---------------- */
 
   function practice() {
-    var pool = HS.storage.state.mistakes.slice(0, 12);
+    var pool = openMistakes().slice(0, 12);
     if (!pool.length) {
       return el('div', {}, [topbar(), el('div.page.center', {}, [
         el('div', { style: { fontSize: '54px', marginTop: '40px' } }, ['✨']),
@@ -304,6 +314,90 @@ HS.screens = (function () {
   }
 
   /* ---------------- settings ---------------- */
+
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+  /** '2026-09-26' → '26 September 2026'. */
+  function niceDate(iso) {
+    var p = String(iso).split('-');
+    return p.length === 3 ? (+p[2]) + ' ' + MONTHS[+p[1] - 1] + ' ' + p[0] : String(iso);
+  }
+
+  /**
+   * Which build is running, and whether the phone is showing you an older one. An installed app
+   * serves itself from its own cache, so "I refreshed and nothing changed" is the normal way a
+   * new version fails to arrive — this says so plainly, and fetches the newest one.
+   */
+  function versionCard() {
+    var v = HS.version || { build: 0, date: '' };       // 0 only on a build from before this card
+    var out = el('div.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '8px', lineHeight: '1.5' },
+      text: HS.platform.installed ? 'Installed as an app, so it runs from its own offline copy.'
+                                  : 'Running in ' + HS.platform.browserName() + '.' });
+    var btn = el('button.btn.ghost.sm', { type: 'button' });
+    var busy = false;
+
+    function set(label, kind) {
+      btn.textContent = label;
+      btn.className = 'btn sm ' + (kind || 'ghost');
+    }
+
+    /* sw.js is the one file the app never caches, so its build number is the one on the server. */
+    function check() {
+      if (busy) return;
+      busy = true;
+      out.textContent = 'Checking…';
+      fetch('sw.js', { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (body) {
+        busy = false;
+        var m = body.match(/homestudy-v(\d+)/);
+        var newest = m ? parseInt(m[1], 10) : 0;
+        if (!newest) { out.textContent = 'Couldn’t read the version on the server.'; return; }
+        if (newest > v.build) {
+          out.textContent = 'Build ' + newest + ' is on the server — this phone is still showing build ' + v.build + '.';
+          set('Update now', 'primary');
+          btn.onclick = update;
+          return;
+        }
+        out.textContent = 'This is the newest build ✓';
+        set('Check again');
+      }).catch(function () {
+        busy = false;
+        out.textContent = 'Couldn’t reach the server — check your connection.';
+        set('Try again');
+      });
+    }
+
+    /* Fetch the new worker, let it take over, then reload onto the new files. */
+    function update() {
+      if (busy) return;
+      busy = true;
+      out.textContent = 'Fetching the new version…';
+      set('Updating…');
+      var done = false;
+      function reload() { if (!done) { done = true; location.reload(); } }
+      setTimeout(reload, 6000);                     // never leave it spinning
+      if (!navigator.serviceWorker || !navigator.serviceWorker.getRegistration) return reload();
+      navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (!reg) return reload();
+        navigator.serviceWorker.addEventListener('controllerchange', reload);
+        return reg.update().then(function () { setTimeout(reload, 1200); });
+      }).catch(reload);
+    }
+
+    set('Check for update');
+    btn.onclick = check;
+
+    return el('div.card', {}, [
+      el('div.row', {}, [
+        el('div', {}, [
+          el('div', { text: v.build ? 'Build ' + v.build + (v.date ? ' · ' + niceDate(v.date) : '')
+                                    : 'Build unknown — an old cached copy' }),
+          el('div.muted', { style: { fontSize: '13px', fontWeight: '600' }, text: 'HomeStudy version' })
+        ]),
+        el('div.spacer'), btn
+      ]),
+      out
+    ]);
+  }
 
   var TEST_LINES = { fr: 'Bonjour ! Je parle français.', es: '¡Hola! Hablo español.', ja: 'こんにちは。日本語を話します。', zh: '你好！我说中文。' };
 
@@ -455,11 +549,13 @@ HS.screens = (function () {
         } }, ['Reset'])
       ])]),
 
+      versionCard(),
+
       el('p.muted', { style: { fontSize: '13px', fontWeight: '600', marginTop: '20px', lineHeight: '1.6' },
         text: 'Every quote comes from a public-domain book — see content/<language>/SOURCES.md.' })
     ])]);
   }
 
   return { home: home, profiles: profiles, needsPick: needsPick, track: trackScreen, review: review,
-           practice: practice, settings: settings, topbar: topbar };
+           practice: practice, settings: settings, topbar: topbar, trackOpen: trackOpen };
 })();

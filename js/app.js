@@ -17,11 +17,11 @@ HS.app = (function () {
       if (HS.screens.needsPick() && parts[0] !== 'profiles') view = HS.screens.profiles();
       else if (!parts.length) view = HS.screens.home();
       else if (parts[0] === 'profiles') view = HS.screens.profiles();
-      else if (parts[0] === 'review') view = HS.screens.review(parts[1]);
+      else if (parts[0] === 'review') view = HS.screens.trackOpen(parts[1]) ? HS.screens.review(parts[1]) : HS.screens.home();
       else if (parts[0] === 'track') view = HS.screens.track(parts[1]);
       else if (parts[0] === 'lesson') {
         var id = parts[1], n = parseInt(parts[2], 10);
-        var t = HS.tracks[id];
+        var t = HS.screens.trackOpen(id) ? HS.tracks[id] : null;   // a parked track stays shut
         if (!t || !n || n < 1 || n > t.total) view = HS.screens.home();
         else if (!HS.storage.isUnlocked(id, n)) view = HS.screens.track(id);
         else view = HS.engine.start(id, n);

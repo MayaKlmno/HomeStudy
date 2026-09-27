@@ -1,5 +1,5 @@
 /* Offline cache. Bump VERSION whenever any file below changes so phones pick up the update. */
-var VERSION = 'homestudy-v7';
+var VERSION = 'homestudy-v10';
 var FILES = [
   "./",
   "index.html",
@@ -8,6 +8,7 @@ var FILES = [
   "icons/icon-512.png",
   "icons/apple-touch-icon.png",
   "js/util.js",
+  "js/version.js",
   "js/platform.js",
   "js/storage.js",
   "js/speech.js",
