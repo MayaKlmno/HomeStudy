@@ -44,13 +44,22 @@ speech recognition (on iPhone: Settings → General → Keyboard → Enable Dict
 leniently. Where recognition isn't available it becomes "say it aloud, then tap I said it". Turn
 it off in Settings, or tap "Can't speak now" to skip it for an hour.
 
+If a listen comes back completely empty, it quietly tries once more with a bare recogniser (final
+results only, one guess) before saying anything — Chrome on Android has been seen to return nothing
+at all when asked for interim results and several alternatives, while a plain recogniser on the same
+phone works. When the plain one is what works, the app starts that way from then on. Where the
+recogniser runs on a server (everywhere but Safari), being offline is reported as being offline
+rather than as silence.
+
 When it can't hear you, the app works out which device and browser you're on and shows the steps
 for that one — iPhone, iPad, Android, Mac, Windows, Chromebook, and installed-as-an-app versus in
 the browser — with the step that matches the symptom first. It also separates the two very
 different reasons: the microphone never opened (permission, or something else is using it), or the
 microphone works and only the words are missing (on iPhone and Mac, almost always Dictation being
 off). `🎤 Check the microphone` in that panel watches the input level without using recognition at
-all, which tells the two apart.
+all, which tells the two apart. The panel also prints one line of exactly what the recogniser did —
+device, language, which recogniser, online or not, and the timed list of events — to read out or send
+on when nothing else explains it.
 
 ## Install on a phone
 
@@ -98,6 +107,10 @@ microphone stream — opening one takes the microphone away from the recogniser 
 silence. Settings has a 🎤 Test button and the steps for your device. Talk mode also checks the
 microphone before the first level, reads out the fix for your device if it hears nothing, and after
 several silent answers switches to timed pauses so the drive isn't wasted.
+
+Two silent answers in a row where the microphone plainly opened are reported as recognition
+failing, not as you being too quiet — on Android that is nearly always what it is, and the steps
+then lead with being online and with Speech Services by Google rather than with permissions.
 
 **Talk mode** (🗣 on each language's page) is 80 dialogs for when you can't look at the screen.
 Levels 1–40 cover survival situations (greetings, café, shopping, directions, hotel, small talk,

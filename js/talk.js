@@ -7,7 +7,16 @@ HS.talkMode = (function () {
   var NARRATOR = 'en-US';
   var TRANSLATE_THEM_UNTIL = 15;       // early levels: the narrator says what the other person meant
   var PASS = 0.6;
-  var FATAL = { 'not-allowed': 1, 'service-not-allowed': 1, 'network': 1, 'unsupported': 1, 'audio-capture': 1 };
+  var FATAL = { 'not-allowed': 1, 'service-not-allowed': 1, 'network': 1, 'unsupported': 1,
+                'audio-capture': 1, 'offline': 1 };
+  /* Why grading had to stop, in words the narrator can read out. */
+  function whyFatal(err) {
+    if (err === 'offline' || err === 'network') {
+      return 'There’s no connection, and ' + HS.platform.browserName() + ' needs one to turn speech into words.';
+    }
+    if (err === 'unsupported') return HS.platform.browserName() + ' can’t turn speech into words.';
+    return 'I can’t use the microphone here.';
+  }
   var STOP = { stopped: true };
   var session = null;
 
@@ -135,10 +144,12 @@ HS.talkMode = (function () {
   function showMicHelp(s, opts) {
     if (!s || s.stopped) return;
     var kind = (opts && opts.words) ? 'words' : 'permission';
-    if (s.helpShown === kind) return;
+    var trace = HS.speech.lastTrace();
+    if (s.helpShown === kind && s.helpTrace === trace) return;   // nothing new to say
     s.helpShown = kind;
+    s.helpTrace = trace;
     s.ui.help.textContent = '';
-    s.ui.help.appendChild(HS.platform.micHelpNode({ test: false, words: kind === 'words' }));
+    s.ui.help.appendChild(HS.platform.micHelpNode({ test: false, words: kind === 'words', trace: trace }));
     s.ui.help.hidden = false;
   }
 
@@ -231,16 +242,31 @@ HS.talkMode = (function () {
   function narrate(s, text) { return speak(s, text, NARRATOR, { rate: 1 }); }
   function chime(ok) { HS.audio.cue(ok ? 'right' : 'wrong'); }
 
-  /* Listens, and says out loud and on screen what the microphone is doing. Stops early when
-     nothing at all is coming in, and waits longer once it can hear you speaking. */
+  /* Listens, and says out loud and on screen what the microphone is doing. Gives up early when
+     nothing at all is coming in, and waits longer once anything is. */
+  var QUIET_WAIT = 7000;               // nothing coming in at all
+  var LONGEST_WAIT = 16000;            // hard stop, however talkative
+
   function hear(s) {
     return gate(s).then(function () {
       if (s.skip) return { err: 'skip', alts: [], seen: {} };
       return new Promise(function (resolve) {
-        var silent, longest, heardVoice = false;
+        var silent, longest, heardVoice = false, stopFn = null;
         micUI(s, true, 0);
         HS.audio.cue('listen');
-        var stopFn = HS.speech.listen(s.lang, function (err, alts, seen) {
+
+        /* Any sign of life — sound, speech, or words coming in — buys you the long window.
+           Only the speech event used to count, and Chrome on Android never sends it, so a
+           whole answer could be cut off at six seconds. */
+        function arm() {
+          clearTimeout(silent);
+          clearTimeout(longest);
+          silent = setTimeout(function () { if (stopFn) stopFn(); }, QUIET_WAIT);
+          longest = setTimeout(function () { if (stopFn) stopFn(); }, LONGEST_WAIT);
+        }
+        function alive() { clearTimeout(silent); }
+
+        stopFn = HS.speech.listen(s.lang, function (err, alts, seen) {
           clearTimeout(silent); clearTimeout(longest);
           s.stopListen = null;
           micUI(s, false);
@@ -249,20 +275,20 @@ HS.talkMode = (function () {
         }, {
           on: function (state, info) {
             if (state === 'ready') show(s, { status: '🎤 Listening — say it now' });
-            else if (state === 'sound') show(s, { status: 'Picking something up…' });
+            else if (state === 'sound') { alive(); show(s, { status: 'Picking something up…' }); }
             else if (state === 'voice') {
+              alive();                                    // you are talking: let you finish
               if (!heardVoice) { heardVoice = true; HS.audio.cue('hearing'); }
               s.ui.meter.classList.add('hearing');
               show(s, { status: '🎙 I can hear you' });
-              clearTimeout(silent);                       // you are talking: let you finish
-            } else if (state === 'words') { s.ui.live.textContent = info || ''; }
+            } else if (state === 'words') { alive(); s.ui.live.textContent = info || ''; }
             else if (state === 'quiet') show(s, { status: 'Got it — checking…' });
+            else if (state === 'again') { arm(); show(s, { status: '🎤 Once more — say it now' }); }
           },
           level: function (v) { micUI(s, true, v); }
         });
         s.stopListen = stopFn;
-        silent = setTimeout(stopFn, 6000);                // nothing at all after 6s
-        longest = setTimeout(stopFn, 15000);              // hard stop
+        arm();
       });
     });
   }
@@ -289,12 +315,17 @@ HS.talkMode = (function () {
       if (!r.alts.length && !r.heardVoice && !s.skip) {
         s.silentRuns = (s.silentRuns || 0) + 1;
         var dead = !r.seen.audio;                      // the recogniser never even got the mic
-        show(s, { status: dead ? '✕ The microphone never opened' : '✕ Didn’t hear anything' });
+        /* Twice in a row the microphone opened and nothing came out of it: that is recognition
+           failing, not you being quiet, and on Android it usually is. */
+        var mute = !dead && s.silentRuns >= 2;
+        show(s, { status: dead ? '✕ The microphone never opened'
+                       : mute ? '✕ The mic works, but no words come back' : '✕ Didn’t hear anything' });
         if (s.silentRuns === 2 || dead) {
-          showMicHelp(s);
+          showMicHelp(s, { words: mute });
           return narrate(s, dead
             ? 'The microphone didn’t open. Something else may be using it. ' + HS.platform.micHint() + ' The steps are on the screen.'
-            : 'I still can’t hear you. ' + HS.platform.micHint() + ' The steps are on the screen. Speak up after the beep.')
+            : 'The microphone is working, but no words are coming back from it. That is ' + HS.platform.browserName()
+              + '’s speech recognition, not you. The steps for your ' + HS.platform.deviceName() + ' are on the screen.')
             .then(function () { return false; });
         }
         if (s.silentRuns >= 4) {                       // give up on the mic, keep the lesson going
@@ -339,11 +370,11 @@ HS.talkMode = (function () {
           show(s, { status: r.alts.length ? '✓ I heard: “' + r.alts[0] + '”' : '✓ I can hear you' });
           return narrate(s, 'I can hear you. Here we go.');
         }
-        showMicHelp(s, { words: r.err === 'network' || r.err === 'unsupported' });
+        showMicHelp(s, { words: r.err === 'network' || r.err === 'unsupported' || r.err === 'offline' });
         if (r.err && FATAL[r.err]) {
           s.manual = true;
-          show(s, { status: '✕ The microphone isn’t available' });
-          return narrate(s, 'I can’t use the microphone, so I’ll pause for your answers and then say them. ' + HS.platform.micHint());
+          show(s, { status: r.err === 'offline' || r.err === 'network' ? '✕ No connection' : '✕ The microphone isn’t available' });
+          return narrate(s, whyFatal(r.err) + ' So I’ll pause for your answers and then say them.');
         }
         if (!r.seen.audio) {
           show(s, { status: '✕ The microphone never opened' });

@@ -482,13 +482,15 @@ HS.screens = (function () {
         var help = el('div.speak-help');
         var stopFn = null;
 
-        var helpFor = null;
+        var helpFor = null, helpTrace = null;
         function showHelp(opts) {
           var kind = (opts && opts.words) ? 'words' : 'permission';
-          if (helpFor === kind) return;
+          var trace = HS.speech.lastTrace();
+          if (helpFor === kind && helpTrace === trace) return;   // nothing new to say
           helpFor = kind;
+          helpTrace = trace;
           help.textContent = '';
-          help.appendChild(HS.platform.micHelpNode({ test: true, words: kind === 'words' }));
+          help.appendChild(HS.platform.micHelpNode({ test: true, words: kind === 'words', trace: trace }));
         }
         if (!HS.speech.canListen()) showHelp({ words: true });
 
@@ -516,18 +518,19 @@ HS.screens = (function () {
                 }
                 out.textContent = err === 'not-allowed' || err === 'service-not-allowed'
                     ? 'Blocked ✕ — the microphone isn’t allowed here.'
-                  : err === 'network'
-                    ? 'Speech recognition needs an internet connection in ' + HS.platform.browserName() + '.'
+                  : err === 'offline' || err === 'network'
+                    ? 'No connection ✕ — ' + HS.platform.browserName() + ' sends the sound away to be turned into words.'
                   : seen.voice
                     ? 'Heard you, but couldn’t make out any words — try again a little slower.'
                   : !seen.audio
                     ? 'The microphone never opened ✕ — something else may be using it.'
-                  : 'Didn’t hear anything ✕.';
-                showHelp({ words: seen.voice || err === 'network' });
+                  : 'The microphone opened, but no words came back ✕.';
+                showHelp({ words: seen.voice || err === 'offline' || err === 'network' || seen.audio });
               }, {
                 on: function (state, info) {
                   if (state === 'voice') { meter.classList.add('hearing'); out.textContent = '🎙 I can hear you'; }
                   else if (state === 'words') out.textContent = '“' + info + '”';
+                  else if (state === 'again') out.textContent = 'Nothing came back — listening again…';
                 },
                 level: function (v) { bar.style.width = Math.round(v * 100) + '%'; }
               });

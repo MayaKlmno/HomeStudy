@@ -101,10 +101,39 @@ HS.speech = (function () {
     if (f) { try { f(); } catch (e) {} }
   }
 
+  /* Recognition that runs on Google's or Apple's servers needs a connection. Only Safari does it
+     on the device, so everywhere else "no words came back" may simply be a dead network. */
+  function needsNetwork() {
+    return !(HS.platform && HS.platform.browser === 'safari');
+  }
+  function offline() { return navigator.onLine === false; }
+
+  /* What the last attempt did, for the "it still can't hear me" panel. Plain text on purpose:
+     it is meant to be read out or pasted into a message. */
+  var trace = { lines: [], err: null, results: 0, lang: '', plain: false, online: true, tries: 0 };
+  function lastTrace() {
+    if (!trace.lines.length) return '';
+    return [(HS.platform ? HS.platform.label() : 'unknown device'),
+            'language ' + trace.lang,
+            (trace.plain ? 'plain recogniser' : 'full recogniser') + (trace.tries > 1 ? ' on try ' + trace.tries : ''),
+            (trace.online ? 'online' : 'OFFLINE'),
+            trace.results + ' result' + (trace.results === 1 ? '' : 's'),
+            trace.lines.join(' · ')].join(' | ');
+  }
+
+  /* Errors where trying again the same second is pointless. */
+  var HOPELESS = { 'not-allowed': 1, 'service-not-allowed': 1, 'audio-capture': 1, 'unsupported': 1, 'offline': 1 };
+
+  /* Chrome on Android has been seen to return nothing at all when asked for interim results and
+     several alternatives, while a bare recogniser on the same phone works. So when an attempt
+     comes back empty-handed we try once more with everything optional switched off, and if that
+     is what works we start that way from then on. */
+  var preferPlain = false;
+
   /**
    * Listens for one phrase. cb(err, alternatives, info):
-   *   err   — null, 'no-speech', 'not-allowed', 'service-not-allowed', 'network', 'unsupported'
-   *           or another SpeechRecognition error code.
+   *   err   — null, 'no-speech', 'not-allowed', 'service-not-allowed', 'network', 'offline',
+   *           'unsupported', or another SpeechRecognition error code.
    *   info  — what the microphone actually did: { audio, sound, voice }. `audio` false means the
    *           recogniser never even opened the microphone, which is a different problem from you
    *           being too quiet, and worth saying so.
@@ -116,60 +145,114 @@ HS.speech = (function () {
    *   'voice'  — that something is speech: you are being heard
    *   'words'  — info is the text recognised so far
    *   'quiet'  — you stopped speaking; it is working out the answer
+   *   'again'  — the first try came back empty; listening again with a plainer recogniser
    * opts.level(0–1) drives a level bar or a ring, from those same events — see pulse().
    */
   function listen(tag, cb, opts) {
     opts = opts || {};
     var on = opts.on || function () {};
     var seen = { audio: false, sound: false, voice: false };
+    var use = tag || lang;
     if (!Rec) { cb('unsupported', [], seen); return function () {}; }
     stop();
     stopListening();                  // two recognisers at once get nothing between them
-    var rec, finished = false, bar = pulse(opts.level);
+
+    var rec = null, finished = false, aborted = false, tries = 0, t0 = Date.now();
+    var bar = pulse(opts.level);
+    trace = { lines: [], err: null, results: 0, lang: use, plain: preferPlain, online: !offline(), tries: 0 };
+
+    function note(what) { trace.lines.push(Math.round(Date.now() - t0) + 'ms ' + what); }
+
     function end(err, alts) {
       if (finished) return;
       finished = true;
       if (active === halt) active = null;
       bar.stop();
+      trace.err = err;
+      trace.results = (alts || []).length;
       cb(err, alts || [], seen);
     }
-    function halt() { try { rec && rec.stop(); } catch (e) {} }
+    function halt() { aborted = true; stopRec(); }
+    function stopRec() { try { rec && rec.stop(); } catch (e) {} }
     function state(name, level) {
       if (name === 'audio') seen.audio = true;
       if (name === 'sound') seen.sound = seen.audio = true;
       if (name === 'voice') seen.voice = seen.sound = seen.audio = true;
       bar.to(level);
     }
-    try {
-      rec = new Rec();
-      rec.lang = tag || lang;
-      rec.interimResults = true;                 // so the words can be shown as they are heard
-      rec.continuous = false;
-      rec.maxAlternatives = 5;
-      rec.onaudiostart = function () { state('audio', 0.1); on('ready'); };
-      rec.onsoundstart = function () { state('sound', 0.45); on('sound'); };
-      rec.onspeechstart = function () { state('voice', 0.85); on('voice'); };
-      rec.onspeechend = function () { bar.to(0.12); on('quiet'); };
-      rec.onresult = function (e) {
-        var alts = [], interim = '', final = false;
-        for (var i = 0; i < e.results.length; i++) {
-          if (!e.results[i].isFinal) { interim += e.results[i][0].transcript; continue; }
-          final = true;
-          for (var j = 0; j < e.results[i].length; j++) alts.push(e.results[i][j].transcript);
-        }
-        if (!final) {
-          state('voice', 0.9);                   // words are coming in, so it is hearing you
-          on('words', interim);
-          return;
-        }
-        end(null, alts);
-      };
-      rec.onerror = function (e) { end(e.error || 'error'); };
-      rec.onend = function () { end('no-speech'); };
-      rec.start();
-      active = halt;
-      on('ready');                               // some browsers never fire onaudiostart
-    } catch (e) { end('error'); }
+
+    /* Nothing came back. Worth one more go with a bare recogniser? */
+    function attemptOver(err, alts) {
+      if (finished) return;
+      if (alts && alts.length) {
+        if (tries > 1) preferPlain = true;        // the plain one is what works on this phone
+        return end(null, alts);
+      }
+      if (!aborted && tries === 1 && !HOPELESS[err] && !seen.voice) {
+        note('nothing back, trying a plain recogniser');
+        return attempt(true);
+      }
+      end(err, alts);
+    }
+
+    /** 'ready' the first time round, 'again' once we are on the second try. */
+    function began() { return tries > 1 ? 'again' : 'ready'; }
+
+    function attempt(plain) {
+      tries++;
+      trace.plain = !!plain;
+      trace.tries = tries;
+      try {
+        rec = new Rec();
+        rec.lang = use;
+        /* A bare recogniser: one guess, final results only. */
+        rec.interimResults = !plain;
+        rec.continuous = false;
+        if (!plain) rec.maxAlternatives = 5;
+        rec.onaudiostart = function () { note('audiostart'); state('audio', 0.1); on(began()); };
+        rec.onsoundstart = function () { note('soundstart'); state('sound', 0.45); on('sound'); };
+        rec.onspeechstart = function () { note('speechstart'); state('voice', 0.85); on('voice'); };
+        rec.onspeechend = function () { note('speechend'); bar.to(0.12); on('quiet'); };
+        rec.onresult = function (e) {
+          var alts = [], interim = '', isFinal = false;
+          for (var i = 0; i < e.results.length; i++) {
+            if (!e.results[i].isFinal) { interim += e.results[i][0].transcript; continue; }
+            isFinal = true;
+            for (var j = 0; j < e.results[i].length; j++) alts.push(e.results[i][j].transcript);
+          }
+          if (!isFinal) {
+            note('interim words');
+            state('voice', 0.9);                 // words are coming in, so it is hearing you
+            on('words', interim);
+            return;
+          }
+          note('result');
+          attemptOver(null, alts);
+        };
+        rec.onerror = function (e) {
+          note('error ' + ((e && e.error) || '?'));
+          attemptOver((e && e.error) || 'error', []);
+        };
+        rec.onend = function () { note('end'); attemptOver('no-speech', []); };
+        note('start' + (plain ? ' (plain)' : ''));
+        rec.start();
+        active = halt;
+        on(began());                             // some browsers never fire onaudiostart
+      } catch (e) {
+        note('start threw');
+        attemptOver('error', []);
+      }
+    }
+
+    /* No network and a recogniser that lives on a server: say so rather than listen for nothing. */
+    if (offline() && needsNetwork()) {
+      note('offline before starting');
+      bar.stop();
+      end('offline', []);
+      return function () {};
+    }
+
+    attempt(preferPlain);
     return halt;
   }
 
@@ -301,6 +384,6 @@ HS.speech = (function () {
 
   return { say: say, stop: stop, unlock: unlock, setLang: setLang, available: available,
            languageName: languageName, canListen: canListen, listen: listen,
-           stopListening: stopListening, probe: probe,
+           stopListening: stopListening, probe: probe, lastTrace: lastTrace,
            closeness: closeness, grade: grade };
 })();

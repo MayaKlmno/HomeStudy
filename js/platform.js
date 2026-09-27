@@ -96,8 +96,15 @@ HS.platform = (function () {
       }
       step('permission', 'Settings → Apps → ' + browserName() + ' → Permissions → Microphone → Allow.');
       step('permission', 'Settings → Privacy → Permission manager → Microphone — check ' + browserName() + ' is allowed, and that microphone access isn’t switched off for everything.');
-      step('words', 'Android turns speech into words over the internet, so check you have a connection' + (browser === 'chrome' ? '.' : ' — and use Chrome, which does it best.'));
+      /* On Android the microphone usually works while the words never arrive, because the words
+         come from Google's servers by way of a separate app on the phone. */
+      step('words', 'Check you are online. Android sends the sound away to be turned into words — there is no offline mode for it, so with no connection nothing ever comes back, however well the microphone works.');
+      step('words', 'Play Store → update Speech Services by Google, and the Google app. ' + browserName() + ' hands the listening to them.');
+      step('words', 'Settings → Apps → Speech Services by Google → check it is enabled, and that it has the Microphone permission too.');
+      step('words', 'Settings → Language and input (under System, or General management) → Voice input → set it to Speech Services by Google.');
+      if (installed) step('words', 'Try the same page in ' + browserName() + ' itself rather than the installed icon — recognition is steadier there.');
       if (browser === 'firefox') notes.push('Firefox on Android can’t recognise words at all — use Chrome for the speaking exercises.');
+      notes.push('Android may also want the language downloaded for voice typing: Gboard → Settings → Voice typing → Languages.');
 
     } else if (os === 'mac') {
       if (browser === 'safari') {
@@ -189,6 +196,7 @@ HS.platform = (function () {
       el('div.mic-help-notes', {}, info.notes.map(function (s) { return el('p', { text: s }); }))
     ];
     if (opts.test) kids.push(micTestNode());
+    if (opts.trace) kids.push(traceNode(opts.trace, !!opts.test));
     return el('div.mic-help', {}, kids);
   }
 
@@ -220,6 +228,24 @@ HS.platform = (function () {
         });
     } }, ['🎤 Check the microphone']);
     return el('div.mic-help-test', {}, [el('div.row', {}, [btn]), meter, out]);
+  }
+
+  /**
+   * Exactly what the recogniser did, in one line. Nobody needs to understand it: it is there so
+   * an unexplained failure can be read out, or sent to someone who does.
+   */
+  function traceNode(text, withCopy) {
+    var kids = [el('div.mic-help-out', { text: 'What happened last time:' }),
+                el('div.mic-help-trace', { text: text })];
+    if (withCopy && navigator.clipboard && navigator.clipboard.writeText) {
+      var btn = el('button.link-btn', { type: 'button', onclick: function () {
+        navigator.clipboard.writeText(text).then(
+          function () { btn.textContent = 'Copied ✓'; },
+          function () { btn.textContent = 'Couldn’t copy — select the line above instead'; });
+      } }, ['Copy this line']);
+      kids.push(btn);
+    }
+    return el('div.mic-help-why', {}, kids);
   }
 
   /* The microphone itself is fine, so recognition is what's failing — which means something

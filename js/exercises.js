@@ -396,13 +396,15 @@ HS.exercises = (function () {
     /* The steps for this exact phone, laptop or browser — shown only when needed, and led by the
        ones that fit what went wrong: opts.words when the microphone plainly works and only the
        words are missing, otherwise the permission steps first. */
-    var helpFor = null;
+    var helpFor = null, helpTrace = null;
     function showHelp(opts) {
       var kind = (opts && opts.words) ? 'words' : 'permission';
-      if (helpFor === kind) return;
+      var trace = HS.speech.lastTrace();
+      if (helpFor === kind && helpTrace === trace) return;   // nothing new to say
       helpFor = kind;
+      helpTrace = trace;
       helpBox.textContent = '';
-      helpBox.appendChild(HS.platform.micHelpNode({ test: true, words: kind === 'words' }));
+      helpBox.appendChild(HS.platform.micHelpNode({ test: true, words: kind === 'words', trace: trace }));
     }
 
     function setListening(on) {
@@ -422,6 +424,7 @@ HS.exercises = (function () {
         status.textContent = '🎙 I can hear you';
       } else if (state === 'words') { live.textContent = info || ''; }
       else if (state === 'quiet') { status.className = 'speak-status'; status.textContent = 'Got it — checking…'; }
+      else if (state === 'again') { status.className = 'speak-status'; status.textContent = 'Nothing came back — listening again, say it once more'; }
     }
 
     /* Nothing came back. Say which of the two very different reasons it was, because the fix
@@ -429,15 +432,21 @@ HS.exercises = (function () {
     function nothingHeard(seen) {
       misses++;
       status.className = 'speak-status bad';
+      var words = true;                           // is the fix about recognition, or permission?
       if (heardVoice || seen.voice) {
         status.textContent = 'I heard you, but couldn’t make out the words — tap the mic and try again, a little slower.';
+      } else if (seen.audio && misses >= 2) {
+        /* The microphone opened and stayed open, twice over, and still nothing came out of it.
+           That is not you being quiet — it is recognition, so say so and stop blaming the mic. */
+        status.textContent = 'The microphone is working, but no words are coming back from it. That’s ' + HS.platform.browserName() + '’s speech recognition, not you.';
       } else if (!seen.audio) {
+        words = false;
         status.textContent = 'The microphone never opened. Something else may be using it, or ' + HS.platform.browserName() + ' isn’t allowed to.';
-        showHelp();
+        showHelp({ words: false });
       } else {
         status.textContent = 'I didn’t hear anything. Speak up right after the beep — the ring moves when the microphone is really picking you up.';
       }
-      if (misses >= 2) { showHelp({ words: heardVoice || seen.voice }); said.hidden = false; }
+      if (misses >= 2) { showHelp({ words: words }); said.hidden = false; }
     }
 
     function toggle() {
@@ -460,8 +469,8 @@ HS.exercises = (function () {
             mic.hidden = true;
             status.textContent = 'The microphone is blocked. Until it’s allowed, say it out loud and tap “I said it”.';
             showHelp();
-          } else if (err === 'network') {
-            status.textContent = 'Turning speech into words needs an internet connection in ' + HS.platform.browserName() + '. Say it out loud and tap “I said it”.';
+          } else if (err === 'offline' || err === 'network') {
+            status.textContent = 'No connection. ' + HS.platform.browserName() + ' sends the sound away to be turned into words, so it can’t do this offline — say it out loud and tap “I said it”.';
             showHelp({ words: true });
           } else if (err === 'audio-capture') {
             status.textContent = 'No microphone available. Say it out loud and tap “I said it”.';
