@@ -10,10 +10,11 @@
    Two: an attempt that comes back empty-handed must be retried once with a bare recogniser,
    because Chrome on Android has been seen to return nothing when asked for interim results and
    several alternatives.
-   Four: nothing else may hold the microphone while the recogniser listens, and on Android the
-   speakers are parked for the whole of it — a running Web Audio output has been seen to leave the
-   recogniser deaf, and suspending that output halfway through changes the audio route beneath a
-   live session and kills it mid-sentence. So it is parked before anything starts, once.
+   Four: nothing else may hold the microphone while the recogniser listens, and on Android the page
+   goes silent for the whole of it — a page making a noise has been seen to leave the recogniser
+   deaf. Silent means the volume down, never the audio session suspended: suspending it halfway
+   through killed the session mid-sentence, and suspending it at all came back as a microphone you
+   had to shout into.
    Three: the go-ahead — the beep the learner speaks after — must wait until the recogniser is
    really taking sound, not fire when the microphone merely opens. A recogniser that runs on a
    server drops whatever is said while its connection is coming up, which reads as half-heard
@@ -24,18 +25,27 @@ var fs = require('fs'), path = require('path'), vm = require('vm');
 var SRC = fs.readFileSync(path.join(__dirname, '..', 'js', 'speech.js'), 'utf8');
 var AUDIO_SRC = fs.readFileSync(path.join(__dirname, '..', 'js', 'audio.js'), 'utf8');
 
-/** The real js/audio.js, with an audio context that records being parked and brought back. */
-function speakers() {
-  var log = [];
+/** The real js/audio.js, over an audio context that records what is done to it. */
+function speakers(opts) {
+  var log = [], gains = [];
   function Ctx() {
     var self = this;
     this.state = 'running';
     this.currentTime = 0;
     this.destination = {};
-    this.createGain = function () { return { connect: function () {}, gain: { value: 0, setValueAtTime: function () {}, exponentialRampToValueAtTime: function () {}, linearRampToValueAtTime: function () {} } }; };
+    this.createGain = function () {
+      var g = { value: 0 };
+      var node = { connect: function () {}, gain: g };
+      g.setValueAtTime = function (v) { g.value = v; };
+      g.cancelScheduledValues = function () {};
+      g.exponentialRampToValueAtTime = function (v) { g.value = v; };
+      g.linearRampToValueAtTime = function (v) { g.value = v; log.push('gain ' + (v > 0.5 ? 'up' : 'down')); };
+      gains.push(g);
+      return node;
+    };
     this.createOscillator = function () { return { connect: function () {}, start: function () {}, stop: function () {}, frequency: { value: 0 }, type: '' }; };
-    this.suspend = function () { self.state = 'suspended'; log.push('parked'); return Promise.resolve(); };
-    this.resume = function () { self.state = 'running'; log.push('back'); return Promise.resolve(); };
+    this.suspend = function () { self.state = 'suspended'; log.push('SUSPENDED'); return Promise.resolve(); };
+    this.resume = function () { self.state = 'running'; log.push('resumed'); return Promise.resolve(); };
   }
   var ctx = {
     console: console, setTimeout: setTimeout, clearTimeout: clearTimeout,
@@ -46,8 +56,9 @@ function speakers() {
   ctx.window.window = ctx.window;
   vm.createContext(ctx);
   vm.runInContext(AUDIO_SRC, ctx);
-  ctx.HS.audio.unlock();                        // a context is alive, as it is during a lesson
-  return { audio: ctx.HS.audio, log: log };
+  if (!opts || !opts.cold) ctx.HS.audio.unlock();   // a context is alive, as it is during a lesson
+  return { audio: ctx.HS.audio, log: log,
+           master: function () { return gains[0]; } };
 }
 
 /** A fresh speech.js on a fake device, with fake recognisers and a counted getUserMedia.
@@ -69,7 +80,7 @@ function device(opts) {
     HS: { util: { normalize: function (s) { return s; }, bare: function (s) { return s; } },
           platform: { label: function () { return 'test device'; }, browser: opts.safari ? 'safari' : 'chrome',
                       os: opts.android ? 'android' : 'other' },
-          audio: { hush: function (after) { audio.push('hush ' + after); return function () { audio.push('unhush'); }; } },
+          audio: { hush: function () { audio.push('hush'); return function () { audio.push('unhush'); }; } },
           storage: { state: { settings: { sound: true, speechRate: 0.85, micWarmup: opts.warmup || 0,
                                           listen: opts.listen === false ? false : true } },
                      save: function () { saved++; } } },
@@ -358,8 +369,8 @@ Promise.resolve()
     }, { android: true, warmup: 2000 });
   })
   .then(function () {
-    /* Android: the page falls silent before anything starts listening, and stays that way. */
-    return listening('the page falls silent before Android listens', function (p) {
+    /* Android: the page goes silent before anything starts listening, and stays that way. */
+    return listening('the page goes silent before Android listens', function (p) {
       return p.rec(0).then(function (rec) {
         rec.onaudiostart();
         return p.go().then(function () {
@@ -369,12 +380,12 @@ Promise.resolve()
       });
     }, function (got, ui) {
       ok('the answer is heard', got.alts[0] === 'bonjour', got.alts);
-      ok('the output was parked at once, not part-way through', ui.dev.audio[0] === 'hush 0', ui.dev.audio);
-      ok('parked exactly once, so the route never changes under a live session',
-        ui.dev.audio.filter(function (x) { return /^hush/.test(x); }).length === 1, ui.dev.audio);
-      ok('and brought back when the listen finished', ui.dev.audio[ui.dev.audio.length - 1] === 'unhush', ui.dev.audio);
+      ok('it went silent at once, not part-way through', ui.dev.audio[0] === 'hush', ui.dev.audio);
+      ok('silenced exactly once, so nothing shifts under a live session',
+        ui.dev.audio.filter(function (x) { return x === 'hush'; }).length === 1, ui.dev.audio);
+      ok('and the sound came back when the listen finished', ui.dev.audio[ui.dev.audio.length - 1] === 'unhush', ui.dev.audio);
       ok('the trace says so, before the recogniser was started',
-        ui.trace.indexOf('parking the sound output') < ui.trace.indexOf('start'), ui.trace);
+        ui.trace.indexOf('going silent') < ui.trace.indexOf('start'), ui.trace);
       ok('the go-ahead was a buzz, since the beep could not play', ui.dev.buzzes[0] === 60, ui.dev.buzzes);
       ok('and being heard buzzed too', JSON.stringify(ui.dev.buzzes[1]) === '[25,45,25]', ui.dev.buzzes);
       ok('so the screen calls it a buzz', ui.speech.goSignal() === 'buzz', ui.speech.goSignal());
@@ -388,7 +399,7 @@ Promise.resolve()
         return p.go().then(function () { rec.onresult(final('bonjour')); });
       });
     }, function (got, ui) {
-      ok('nothing was parked', ui.dev.audio.length === 0, ui.dev.audio);
+      ok('nothing was silenced', ui.dev.audio.length === 0, ui.dev.audio);
       ok('nothing buzzed', ui.dev.buzzes.length === 0, ui.dev.buzzes);
       ok('and the screen still says beep', ui.speech.goSignal() === 'beep', ui.speech.goSignal());
     }, { safari: true });
@@ -462,28 +473,31 @@ Promise.resolve()
       got && got.err === 'unsupported' && got.alts.length === 0 && !!got.seen, got);
   })
   .then(function () {
-    /* Parking the speakers must happen there and then. A timer, however short, would park them a
-       tick after the recogniser had started — changing the audio route under a live session, which
-       is what killed it mid-sentence. */
+    /* Going silent must turn the volume down there and then, and must never suspend the audio
+       session: suspending it is what left Android's microphone needing to be shouted into. */
     var sp = speakers();
-    console.log('\nparking the speakers happens at once');
-    var back = sp.audio.hush(0);
-    ok('parked before the call even returns', sp.log.join() === 'parked', sp.log);
+    console.log('\ngoing silent turns the volume down, and nothing else');
+    var loud = sp.master().value;
+    ok('it starts at full volume', loud > 0.5, loud);
+    var back = sp.audio.hush();
+    ok('the volume goes down before the call even returns', sp.master().value < 0.01, sp.master().value);
+    ok('and the audio session is left alone', sp.log.indexOf('SUSPENDED') === -1, sp.log);
     sp.audio.cue('listen');
-    ok('and nothing new is played while they are parked', sp.log.join() === 'parked', sp.log);
+    ok('nothing new is played while silent', sp.log.filter(function (x) { return x === 'gain up'; }).length === 0, sp.log);
     back();
-    ok('brought back when released', sp.log.join() === 'parked,back', sp.log);
-    sp.audio.cue('done');
-    ok('after which sound plays again', true);
+    ok('the volume comes back when released', sp.master().value === loud, sp.master().value);
+    ok('still without ever suspending anything', sp.log.indexOf('SUSPENDED') === -1, sp.log);
+    ok('and releasing twice is harmless', (function () { back(); return sp.master().value === loud; })());
 
-    var sp2 = speakers();
-    var back2 = sp2.audio.hush(300);
-    ok('a delay is still honoured when one is asked for', sp2.log.length === 0, sp2.log);
+    /* Going silent before any sound has played at all: the context made later must come up silent,
+       or the first beep of a listen would blare out. */
+    var sp2 = speakers({ cold: true });
+    var back2 = sp2.audio.hush();
+    sp2.audio.unlock();
+    ok('a context made while silent comes up silent', sp2.master().value < 0.01, sp2.master().value);
     back2();
-    ok('and releasing before it lands parks nothing at all', sp2.log.length === 0, sp2.log);
-    return wait(360).then(function () {
-      ok('not even later', sp2.log.length === 0, sp2.log);
-    });
+    ok('and is turned up when the listen ends', sp2.master().value > 0.5, sp2.master().value);
+    return Promise.resolve();
   })
   .then(function () {
     console.log(fails ? '\n' + fails + ' check(s) FAILED' : '\nall checks passed');

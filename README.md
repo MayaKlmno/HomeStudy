@@ -125,15 +125,26 @@ silence. Settings has a 🎤 Test button and the steps for your device. Talk mod
 microphone before the first level, reads out the fix for your device if it hears nothing, and after
 several silent answers switches to timed pauses so the drive isn't wasted.
 
-**While something is listening, the page goes quiet on Android.** A running Web Audio output has
-been seen to leave Chrome's recogniser deaf there — the microphone opens and not so much as a sound
-event arrives, while the microphone itself is plainly fine. So the sound output is parked, **before
-anything starts listening and for the whole of it**: suspending it part-way through changes the audio
-route beneath a live session and ends it on the spot, which reads as being heard and then cut off
-mid-sentence with nothing to show. Since the speakers are parked, Android's go-ahead is a short buzz
-instead of a beep, with a double buzz when it first hears you, and the screen says "wait for the
-buzz" rather than the beep. Only Android pays any of this. A microphone check also gets out of the
-way of a listen, rather than holding the microphone it needs.
+**While something is listening, the page goes quiet on Android.** A page making a noise has been
+seen to leave Chrome's recogniser deaf there — the microphone opens and not so much as a sound event
+arrives, while the microphone itself is plainly fine. So nothing is played while something is
+listening, from before it starts until after it ends.
+
+Quiet means **the volume down, never the audio session suspended**, and the difference is the whole
+history of this: suspending it part-way through changed the audio route under a live recogniser and
+killed the session mid-sentence; suspending it at all came back as a microphone you had to shout
+into. On iPhone the audio context is simply left running throughout and a normal voice is heard
+perfectly well, so silent-and-still-running is the state to match. Since the speakers are down,
+Android's go-ahead is a short buzz instead of a beep, with a double buzz when it first hears you, and
+the screen says "wait for the buzz" rather than the beep. Only Android pays any of this. A microphone
+check also gets out of the way of a listen, rather than holding the microphone it needs.
+
+**"I have to shout" has two different causes**, so the microphone check now reports how loud it
+actually heard you — "A normal speaking level (48% at the loudest)" — and says so in the trace line.
+Quiet there means the input is faint, and being near the microphone matters more than being loud:
+Android's own noise suppression cuts a distant voice away entirely, and a headset, smartwatch or car
+kit can take over as the input without saying so. Normal there means the input is fine and it is the
+recogniser that wants more.
 
 Being heard and then getting nothing back now earns the same second try as hearing nothing at all —
 cut off mid-sentence looks exactly like that, and it is not something to blame on your diction.

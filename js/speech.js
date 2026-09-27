@@ -133,6 +133,7 @@ HS.speech = (function () {
   /* What the last attempt did, for the "it still can't hear me" panel. Plain text on purpose:
      it is meant to be read out or pasted into a message. */
   var trace = { lines: [], err: null, results: 0, lang: '', plain: false, online: true, tries: 0, warmup: 0 };
+  var lastPeak = null;                // the loudest a microphone check has heard, for the trace
   function lastTrace() {
     if (!trace.lines.length) return '';
     return [(HS.platform ? HS.platform.label() : 'unknown device'),
@@ -140,6 +141,7 @@ HS.speech = (function () {
             (trace.plain ? 'plain recogniser' : 'full recogniser') + (trace.tries > 1 ? ' on try ' + trace.tries : ''),
             (trace.online ? 'online' : 'OFFLINE'),
             'warm-up ' + trace.warmup + 'ms',
+            (lastPeak === null ? 'level not checked' : 'level ' + Math.round(lastPeak * 100) + '%'),
             trace.results + ' result' + (trace.results === 1 ? '' : 's'),
             trace.lines.join(' · ')].join(' | ');
   }
@@ -185,8 +187,8 @@ HS.speech = (function () {
   var GO_ANYWAY = 1800;               // no news from the recogniser: go ahead regardless
 
   /* Only Android has shown the recogniser going deaf while this page is playing sound, so only
-     Android has its speakers parked — and only Android can buzz instead, which is what it gets
-     in place of the beeps it can no longer play. */
+     Android goes silent to listen — and only Android can buzz instead, which is what it gets in
+     place of the beeps it can no longer play. */
   function hushWhileListening() {
     return !!(HS.platform && HS.platform.os === 'android');
   }
@@ -358,14 +360,13 @@ HS.speech = (function () {
       }
     }
 
-    /* Park the sound output before anything starts listening, and leave it parked until the whole
-       listen is over. It used to be parked half a second in, once the go-ahead beep had finished
-       ringing — and suspending the output under a live recogniser changes the audio route beneath
-       it, which ends the session on the spot. It heard you, then died mid-sentence with nothing to
-       show. So the page goes quiet first, stays quiet, and the go-ahead is a buzz instead. */
+    /* Go silent before anything starts listening, and stay silent until the listen is over: a page
+       making a noise can leave Android's recogniser deaf. Silent means the volume down, not the
+       audio session torn down — see HS.audio.hush. The go-ahead is a buzz, since a beep would not
+       be heard. */
     if (hushWhileListening() && HS.audio && HS.audio.hush) {
-      note('parking the sound output');
-      unhush = HS.audio.hush(0);
+      note('going silent');
+      unhush = HS.audio.hush();
     }
 
     /* No network and a recogniser that lives on a server: say so rather than listen for nothing. */
@@ -445,6 +446,7 @@ HS.speech = (function () {
           try { ctx.close(); } catch (e) {}
           st.getTracks().forEach(function (t) { t.stop(); });
           onLevel(0);
+          lastPeak = peak;
           resolve({ ok: peak > 0.08, peak: peak, err: null });
         }
         checking = finish;             // so a listen can take the microphone back

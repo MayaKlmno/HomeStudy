@@ -47,6 +47,7 @@ HS.notes = (function () {
 
 HS.audio = (function () {
   var ctx = null, master = null, hushed = false;
+  var VOLUME = 0.9;
 
   function ac() {
     if (!ctx) {
@@ -54,7 +55,7 @@ HS.audio = (function () {
       if (!C) return null;
       ctx = new C();
       master = ctx.createGain();
-      master.gain.value = 0.9;
+      master.gain.value = hushed ? 0.0001 : VOLUME;
       master.connect(ctx.destination);
     }
     if (ctx.state === 'suspended') ctx.resume();
@@ -124,31 +125,36 @@ HS.audio = (function () {
   function unlock() { ac(); }
 
   /**
-   * Parks the sound output, and gives back a function that brings it round again.
+   * Goes silent, and gives back a function that brings the sound round again.
    *
-   * On Android a Web Audio output that is still running can starve the speech recogniser: the
-   * microphone opens and not so much as a sound event ever arrives, while the microphone itself
-   * is plainly fine. So while something is listening, this page stops playing — `after` leaves
-   * the go-ahead beep time to finish ringing first — and nothing new is played until it is back.
+   * On Android a page that is making a noise can starve the speech recogniser, so nothing is
+   * played while something is listening. This turns the volume down and refuses new sounds; it
+   * deliberately does NOT suspend the audio context. Suspending tears the audio session down,
+   * and on Android that came back as a microphone you had to shout into — while on iPhone, where
+   * the context is simply left running throughout, the recogniser hears a normal voice perfectly
+   * well. Silent and still running is the state that works.
    */
-  function hush(after) {
-    var released = false, timer = null;
-    function park() {
-      if (released) return;
-      hushed = true;
-      if (ctx && ctx.state === 'running' && ctx.suspend) { try { ctx.suspend(); } catch (e) {} }
-    }
-    /* No delay means no delay: a timer here, however short, would park the output a tick after
-       the recogniser had already started, which is the very thing this is meant to avoid. */
-    if (after) timer = setTimeout(park, after);
-    else park();
+  function hush() {
+    var released = false;
+    hushed = true;
+    volume(0.0001);
     return function () {
       if (released) return;
       released = true;
-      clearTimeout(timer);
       hushed = false;
-      if (ctx && ctx.state === 'suspended' && ctx.resume) { try { ctx.resume(); } catch (e) {} }
+      volume(VOLUME);
     };
+  }
+
+  /* Whatever is playing right now, taken as it stands: a context that does not exist yet will be
+     made at the right volume by ac(), and one made while silent is turned up again from here. */
+  function volume(to) {
+    if (!ctx || !master) return;
+    try {
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
+      master.gain.linearRampToValueAtTime(to, ctx.currentTime + 0.05);
+    } catch (e) { try { master.gain.value = to; } catch (e2) {} }
   }
 
   /* Little earcons for speaking practice, so you can follow it without looking at the screen:

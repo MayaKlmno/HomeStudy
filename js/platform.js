@@ -103,6 +103,7 @@ HS.platform = (function () {
       step('words', 'Settings → Apps → Speech Services by Google → check it is enabled, and that it has the Microphone permission too.');
       step('words', 'Settings → Language and input (under System, or General management) → Voice input → set it to Speech Services by Google.');
       if (installed) step('words', 'Try the same page in ' + browserName() + ' itself rather than the installed icon — recognition is steadier there.');
+      step('words', 'Having to shout? Hold the phone nearer your mouth, and check nothing else is acting as the microphone — a headset, a smartwatch or a car kit takes over silently. Android’s own noise suppression also cuts a faint voice away altogether, so being close matters more than being loud.');
       if (browser === 'firefox') notes.push('Firefox on Android can’t recognise words at all — use Chrome for the speaking exercises.');
       notes.push('Android may also want the language downloaded for voice typing: Gboard → Settings → Voice typing → Languages.');
 
@@ -202,9 +203,10 @@ HS.platform = (function () {
   }
 
   /**
-   * A microphone check that doesn't involve speech recognition at all: it just watches the
-   * level. If this bar moves, the microphone works and the problem is recognition; if it
-   * doesn't, the microphone itself is blocked or muted.
+   * A microphone check that doesn't involve speech recognition at all: it just watches the level.
+   * It answers two different questions — whether the microphone works, and, when it does, how
+   * loud it actually hears you at a normal speaking voice. "I have to shout" is a quiet input if
+   * this comes back quiet, and an insensitive recogniser if it comes back normal.
    */
   function micTestNode() {
     var bar = el('i');
@@ -214,21 +216,31 @@ HS.platform = (function () {
       if (btn.disabled) return;
       btn.disabled = true;
       meter.classList.add('on');
-      out.textContent = 'Talk for a few seconds…';
-      HS.speech.probe({ ms: 3000, level: function (v) { bar.style.width = Math.round(v * 100) + '%'; } })
+      out.textContent = 'Say a whole sentence, at the volume you would normally use…';
+      HS.speech.probe({ ms: 4000, level: function (v) { bar.style.width = Math.round(v * 100) + '%'; } })
         .then(function (r) {
           btn.disabled = false;
           meter.classList.remove('on');
           bar.style.width = '0%';
-          out.textContent = r.ok ? worksButNoWords()
+          out.textContent = r.ok ? loudness(r.peak) + ' ' + worksButNoWords()
             : r.err === 'blocked' ? 'Blocked ✕ — the browser isn’t letting this page use the microphone. Start at step 1 above.'
             : r.err === 'none' ? 'No microphone found ✕ — check it’s plugged in or chosen as the input device.'
             : r.err === 'busy' ? 'Something else is using the microphone ✕ — close other tabs, calls and recording apps.'
             : r.err ? 'Couldn’t open the microphone ✕ — start at step 1 above.'
-            : 'Didn’t pick anything up ✕ — the microphone is muted, too quiet, or the wrong input is chosen.';
+            : 'Didn’t pick anything up ✕ — the microphone is muted, turned right down, or the wrong input is chosen.';
         });
     } }, ['🎤 Check the microphone']);
     return el('div.mic-help-test', {}, [el('div.row', {}, [btn]), meter, out]);
+  }
+
+  /** How loud the microphone heard you, in words and in a number worth quoting. */
+  function loudness(peak) {
+    var pct = Math.round(Math.min(1, peak || 0) * 100);
+    var how = pct >= 70 ? 'Loud and clear' : pct >= 35 ? 'A normal speaking level' : 'Quiet';
+    var why = pct >= 35 ? ''
+      : ' The microphone is picking you up, but faintly — hold the phone nearer your mouth, take it out'
+        + ' of a case that covers the microphone, and check a headset or car kit hasn’t taken over as the input.';
+    return how + ' (' + pct + '% at the loudest).' + why;
   }
 
   /**
