@@ -10,6 +10,7 @@ HS.app = (function () {
 
   function render() {
     if (HS.talkMode) HS.talkMode.stop();          // leaving the talk player ends the session
+    if (HS.engine) HS.engine.stop();              // leaving a lesson keeps your place in it
     var parts = (location.hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean);
     var view;
 

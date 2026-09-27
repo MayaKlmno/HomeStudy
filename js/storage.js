@@ -15,6 +15,7 @@ HS.storage = (function () {
     mistakes: [],       // review pool: { track, ex }
     review: {},         // spaced review: { french: { '37:2': { box, due } } }
     talk: {},           // talk mode: { french: { unlocked: 3, levels: { '2': { best, plays } } } }
+    lesson: null,       // the lesson left half-finished, to pick up again (see js/engine.js)
     settings: { sound: true, speechRate: 0.85, speaking: true, noSpeakUntil: 0, micWarmup: 0,
                 listen: true }
   };
@@ -242,6 +243,27 @@ HS.storage = (function () {
   function completedCount(trackId) { return Object.keys(track(trackId).levels).length; }
 
   /** Erase the current profile's progress. */
+  /* ---------- the lesson in progress ---------- */
+
+  /* Leaving a lesson part-way through — even by closing the app — should not throw the work away,
+     so where it had got to is kept here until it is finished, failed, or started again. Only one
+     at a time: starting a different lesson replaces it. */
+  function saveLesson(snapshot) {
+    state.lesson = snapshot;
+    save();
+  }
+  function lesson(trackId, levelN) {
+    var L = state.lesson;
+    if (!L) return null;
+    if (trackId !== undefined && (L.track !== trackId || L.level !== levelN)) return null;
+    return L;
+  }
+  function clearLesson() {
+    if (!state.lesson) return;
+    state.lesson = null;
+    save();
+  }
+
   function reset() {
     Object.keys(state).forEach(function (k) { delete state[k]; });
     Object.assign(state, fresh());
@@ -254,6 +276,7 @@ HS.storage = (function () {
     rememberMistake: rememberMistake, clearMistakes: clearMistakes,
     totalStars: totalStars, completedCount: completedCount, reset: reset,
     dueReviews: dueReviews, gradeReview: gradeReview, talk: talk, completeTalk: completeTalk,
+    saveLesson: saveLesson, lesson: lesson, clearLesson: clearLesson,
     avatars: AVATARS, currentProfile: currentProfile, listProfiles: listProfiles,
     switchProfile: switchProfile, addProfile: addProfile, updateProfile: updateProfile,
     removeProfile: removeProfile, profileSummary: profileSummary

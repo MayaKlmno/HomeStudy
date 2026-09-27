@@ -267,19 +267,25 @@ HS.screens = (function () {
     var unlocked = n <= st.unlocked;
     var isLast = (n % t.levelsPerUnit) === 0;
     var label = t.title(n);
+    /* Left half-finished: tapping it carries on rather than starting again, so say so. */
+    var open = HS.storage.lesson(id, n);
 
-    var cls = 'node' + (info ? (info.stars >= 3 ? ' gold' : ' done') : unlocked ? ' current' : '');
-    var icon = info ? (info.stars >= 3 ? '👑' : '⭐') : isLast ? (t.readingIcon || '🎵') : unlocked ? '▶' : '🔒';
+    var cls = 'node' + (info ? (info.stars >= 3 ? ' gold' : ' done') : unlocked ? ' current' : '')
+                     + (open ? ' resume' : '');
+    var icon = open ? '⏳'
+             : info ? (info.stars >= 3 ? '👑' : '⭐')
+             : isLast ? (t.readingIcon || '🎵') : unlocked ? '▶' : '🔒';
 
     var btn = el('button.' + cls.replace('node ', 'node.').replace(/ /g, '.'), {
-      type: 'button', disabled: !unlocked, title: 'Level ' + n + ' — ' + label,
+      type: 'button', disabled: !unlocked,
+      title: 'Level ' + n + ' — ' + label + (open ? ' (carry on where you left off)' : ''),
       onclick: function () { HS.app.go('#/lesson/' + id + '/' + n); }
     }, [icon, el('span.n', { text: String(n) })]);
 
     return el('div.path-row', {}, [
       el('div.node-wrap', { style: { transform: 'translateX(' + ZIG[k % ZIG.length] + 'px)' } }, [
         btn,
-        el('div.node-label', { text: label })
+        el('div.node-label', { text: open ? label + ' · ' + open.done + '/' + open.total + ' done' : label })
       ])
     ]);
   }

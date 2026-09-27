@@ -162,6 +162,17 @@ levels come back untaught, as spaced recall. Tap anywhere to pause; the screen s
 runs. Where speech recognition isn't available it pauses for your answer, then says it
 (Pimsleur-style, ungraded).
 
+**A lesson you walk out of is waiting when you come back.** Leaving part-way through — the ✕, the
+logo, the back button, or closing the app altogether — keeps your place: the questions still to come,
+which ones you had peeked at, the hearts, the tally and the time spent on it. Tap the level again and
+it carries on, with a note saying so; the path marks it with ⏳ and how far it got, and the lesson
+gets a ↻ button to start it over instead. It is dropped when the lesson is finished, when the hearts
+run out, when you start it over, when you open a different lesson, or when the level's content has
+changed since (each level is built from a fixed seed, so a kept lesson stores places in that list
+plus a stamp of it, and a stamp that no longer matches is thrown away rather than pointing at the
+wrong questions). Practice and spaced review are put together on the spot and can't be rebuilt, so
+they aren't kept.
+
 **Difficulty climbs steadily.** `node tools/difficulty.js all` checks every track against a
 straight-line ramp: sentence, quote and passage length for the languages (with a check that
 sentences mostly use words taught earlier), notes to play for piano, and answer length for talk
@@ -204,6 +215,7 @@ content/<language>/  SOURCES.md (editions used), RESEARCH.md (how the curriculum
                      TALK.md (how talk mode teaches speaking)
 tools/check-content.js  checks unit and talk shape, explanations, no repeats, quotes verbatim
 tools/check-speech.js   checks listening against a fake recogniser (no browser needed)
+tools/check-resume.js   checks a half-finished lesson survives leaving (needs jsdom)
 tools/difficulty.js     checks that difficulty climbs in a straight line
 tools/sync-files.js     keeps index.html and sw.js in step with the files on disk
 PLAN.md               the full project plan
