@@ -10,6 +10,9 @@
    Two: an attempt that comes back empty-handed must be retried once with a bare recogniser,
    because Chrome on Android has been seen to return nothing when asked for interim results and
    several alternatives.
+   Four: nothing else may hold the microphone or the speakers while the recogniser listens —
+   on Android a running Web Audio output has been seen to leave it deaf, with the microphone open
+   and not even a sound event arriving.
    Three: the go-ahead — the beep the learner speaks after — must wait until the recogniser is
    really taking sound, not fire when the microphone merely opens. A recogniser that runs on a
    server drops whatever is said while its connection is coming up, which reads as half-heard
@@ -24,10 +27,11 @@ var SRC = fs.readFileSync(path.join(__dirname, '..', 'js', 'speech.js'), 'utf8')
     opts.offline      — navigator.onLine false, as when the phone has no connection.
     opts.safari       — recognition runs on the device, so a dead network doesn't matter.
     opts.android      — a phone whose recogniser needs waking up before it hears anything.
-    opts.warmup       — a wait already learned on this device, in milliseconds. */
+    opts.warmup       — a wait already learned on this device, in milliseconds.
+    opts.micWorks     — the microphone opens and carries sound, as it does on the phone in hand. */
 function device(opts) {
   opts = opts || {};
-  var gumCalls = 0, recs = [], saved = 0;
+  var gumCalls = 0, recs = [], saved = 0, audio = [], tracksLive = 1;
   function Rec() { recs.push(this); }
   Rec.prototype.start = function () { this.started = true; };
   Rec.prototype.stop = function () { if (this.onend) this.onend(); };
@@ -37,21 +41,37 @@ function device(opts) {
     HS: { util: { normalize: function (s) { return s; }, bare: function (s) { return s; } },
           platform: { label: function () { return 'test device'; }, browser: opts.safari ? 'safari' : 'chrome',
                       os: opts.android ? 'android' : 'other' },
-          storage: { state: { settings: { sound: true, speechRate: 0.85, micWarmup: opts.warmup || 0 } },
+          audio: { hush: function (after) { audio.push('hush ' + after); return function () { audio.push('unhush'); }; } },
+          storage: { state: { settings: { sound: true, speechRate: 0.85, micWarmup: opts.warmup || 0,
+                                          listen: opts.listen === false ? false : true } },
                      save: function () { saved++; } } },
     navigator: { userAgent: 'check-speech', onLine: !opts.offline,
       mediaDevices: { getUserMedia: function () {
         gumCalls++;
-        return Promise.reject(Object.assign(new Error('refused'), { name: 'NotAllowedError' }));
+        if (!opts.micWorks) return Promise.reject(Object.assign(new Error('refused'), { name: 'NotAllowedError' }));
+        return Promise.resolve({ getTracks: function () { return [{ stop: function () { tracksLive--; } }]; } });
       } } },
-    window: { SpeechRecognition: (opts && opts.noRecogniser) ? null : Rec }
+    window: { SpeechRecognition: (opts && opts.noRecogniser) ? null : Rec,
+      /* Enough of Web Audio for the level-watching microphone check to run. */
+      AudioContext: function () {
+        this.state = 'running';
+        this.createAnalyser = function () {
+          return { fftSize: 512, connect: function () {},
+                   getByteTimeDomainData: function (b) { for (var i = 0; i < b.length; i++) b[i] = 128 + (i % 2 ? 30 : -30); } };
+        };
+        this.createMediaStreamSource = function () { return { connect: function () {} }; };
+        this.resume = function () {}; this.close = function () {};
+      } }
   };
+  ctx.Uint8Array = Uint8Array;
   ctx.window.window = ctx.window;
   vm.createContext(ctx);
   vm.runInContext(SRC, ctx);
   return { speech: ctx.HS.speech, recs: recs, mics: function () { return gumCalls; },
            warmup: function () { return ctx.HS.storage.state.settings.micWarmup; },
-           saves: function () { return saved; } };
+           saves: function () { return saved; }, audio: audio,
+           listenSetting: function () { return ctx.HS.storage.state.settings.listen; },
+           micHeld: function () { return tracksLive > 0; } };
 }
 
 var fails = 0;
@@ -304,6 +324,62 @@ Promise.resolve()
       ok('it stops at two seconds', ui.dev.warmup() === 2000, ui.dev.warmup());
       ok('having still heard the answer', got.alts[0] === 'bonjour', got.alts);
     }, { android: true, warmup: 2000 });
+  })
+  .then(function () {
+    /* Android: the page must fall silent while the recogniser listens, and speak up again after. */
+    return listening('the page falls silent while Android listens', function (p) {
+      return p.rec(0).then(function (rec) {
+        rec.onaudiostart();
+        return p.go().then(function () {
+          rec.onspeechstart();
+          rec.onresult(final('bonjour'));
+        });
+      });
+    }, function (got, ui) {
+      ok('the answer is heard', got.alts[0] === 'bonjour', got.alts);
+      ok('the sound output was parked once listening began', ui.dev.audio[0] === 'hush 500', ui.dev.audio);
+      ok('after the beep had time to finish', /hush 500/.test(ui.dev.audio.join()));
+      ok('and brought back when it finished', ui.dev.audio.indexOf('unhush') > 0, ui.dev.audio);
+      ok('the trace says so', /parking the sound output/.test(ui.trace), ui.trace);
+    }, { android: true });
+  })
+  .then(function () {
+    /* Everywhere else keeps its beeps: only Android has shown the problem, so only it pays. */
+    return listening('elsewhere the page keeps its sound', function (p) {
+      return p.rec(0).then(function (rec) {
+        rec.onaudiostart();
+        return p.go().then(function () { rec.onresult(final('bonjour')); });
+      });
+    }, function (got, ui) {
+      ok('nothing was parked', ui.dev.audio.length === 0, ui.dev.audio);
+    }, { safari: true });
+  })
+  .then(function () {
+    /* A microphone check holds the microphone the recogniser needs. */
+    var d = device({ micWorks: true });
+    console.log('\na microphone check gets out of the way of a listen');
+    var p = d.speech.probe({ ms: 5000 });
+    return wait(30).then(function () {
+      ok('the check has the microphone', d.mics() === 1 && d.micHeld(), d.mics());
+      d.speech.listen('fr-FR', function () {}, {});
+      return p.then(function (r) {
+        ok('starting to listen ends the check early', r && r.err === null, r);
+        ok('and lets go of the microphone', d.micHeld() === false);
+        ok('so the recogniser has it', d.recs.length === 1, d.recs.length);
+      });
+    });
+  })
+  .then(function () {
+    console.log('\nlistening switched off for this device');
+    var d = device({ listen: false }), got = null;
+    ok('canListen() says no, though the browser could', d.speech.canListen() === false);
+    ok('and says why, so the screen can word it properly', d.speech.listeningOff() === true);
+    d.speech.listen('fr-FR', function (err, alts, seen) { got = { err: err, seen: seen }; }, {});
+    ok('a listen refuses rather than opening the microphone', got && got.err === 'unsupported', got);
+    ok('no recogniser was started', d.recs.length === 0, d.recs.length);
+    d.speech.setListening(true);
+    ok('and it can be switched back on', d.speech.canListen() === true && d.listenSetting() === true);
+    ok('which is remembered', d.saves() === 1, d.saves());
   })
   .then(function () {
     var d = device(), ended = [];

@@ -125,6 +125,20 @@ silence. Settings has a 🎤 Test button and the steps for your device. Talk mod
 microphone before the first level, reads out the fix for your device if it hears nothing, and after
 several silent answers switches to timed pauses so the drive isn't wasted.
 
+**While something is listening, the page goes quiet on Android.** A running Web Audio output has
+been seen to leave Chrome's recogniser deaf there — the microphone opens and not so much as a sound
+event arrives, while the microphone itself is plainly fine. So half a second after the go-ahead beep,
+long enough for it to finish ringing, the sound output is parked until listening ends. The cost is
+the "I can hear you" beep while it listens, so only Android pays it. A microphone check also now
+gets out of the way of a listen, rather than holding the microphone it needs.
+
+**And if Chrome still won't do it, listening can be switched off for that device.** Some phones will
+not turn speech into words however the settings are arranged, and a lesson you can't finish is worse
+than one that doesn't grade you. After the "no words are coming back" panel, one tap stops listening
+on that device: speaking exercises wait for you to say the line and tap "I said it", talk mode pauses
+for your answer and then says it, and everything else is unchanged. It is remembered per device, and
+Settings → Listening turns it back on.
+
 Two silent answers in a row where the microphone plainly opened are reported as recognition
 failing, not as you being too quiet — on Android that is nearly always what it is, and the steps
 then lead with being online and with Speech Services by Google rather than with permissions.

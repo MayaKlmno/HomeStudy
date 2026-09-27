@@ -196,6 +196,7 @@ HS.platform = (function () {
       el('div.mic-help-notes', {}, info.notes.map(function (s) { return el('p', { text: s }); }))
     ];
     if (opts.test) kids.push(micTestNode());
+    if (opts.offSwitch) kids.push(giveUpNode(opts.offSwitch));
     if (opts.trace) kids.push(traceNode(opts.trace, !!opts.test));
     return el('div.mic-help', {}, kids);
   }
@@ -228,6 +229,24 @@ HS.platform = (function () {
         });
     } }, ['🎤 Check the microphone']);
     return el('div.mic-help-test', {}, [el('div.row', {}, [btn]), meter, out]);
+  }
+
+  /**
+   * The way out. Some phones will not turn speech into words however the settings are arranged,
+   * and a lesson you can't finish is worse than one that doesn't grade you. This switches
+   * listening off for this device: you say the line out loud and tell the app you said it.
+   */
+  function giveUpNode(after) {
+    var wrap = el('div.mic-help-give');
+    wrap.appendChild(el('div.mic-help-out', { text: 'Tried all that and still nothing?' }));
+    wrap.appendChild(el('button.btn.ghost.sm', { type: 'button', onclick: function () {
+      HS.speech.setListening(false);
+      wrap.textContent = '';
+      wrap.appendChild(el('div.mic-help-out', {
+        text: 'Listening is off on this ' + deviceName() + '. Speaking exercises now wait for you to say the line and tap “I said it”. Turn it back on any time in Settings → Microphone.' }));
+      if (after) after();
+    } }, ['Stop listening on this ' + deviceName()]));
+    return wrap;
   }
 
   /**

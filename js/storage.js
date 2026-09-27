@@ -15,7 +15,8 @@ HS.storage = (function () {
     mistakes: [],       // review pool: { track, ex }
     review: {},         // spaced review: { french: { '37:2': { box, due } } }
     talk: {},           // talk mode: { french: { unlocked: 3, levels: { '2': { best, plays } } } }
-    settings: { sound: true, speechRate: 0.85, speaking: true, noSpeakUntil: 0, micWarmup: 0 }
+    settings: { sound: true, speechRate: 0.85, speaking: true, noSpeakUntil: 0, micWarmup: 0,
+                listen: true }
   };
 
   function fresh() { return JSON.parse(JSON.stringify(blank)); }

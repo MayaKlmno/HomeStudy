@@ -59,6 +59,8 @@
 .mic-help-steps li{font-size:14px;font-weight:600;line-height:1.55;margin-bottom:8px;}
 .mic-help-notes p{margin:6px 0 0;font-size:13px;font-weight:600;line-height:1.5;color:var(--ink-soft);}
 .mic-help-test{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
+.mic-help-give{margin-top:12px;padding-top:10px;border-top:2px solid var(--line);display:flex;
+  flex-direction:column;align-items:flex-start;gap:8px;}
 .mic-help-why{margin-top:12px;padding-top:10px;border-top:2px solid var(--line);}
 .mic-help-trace{
   margin-top:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;

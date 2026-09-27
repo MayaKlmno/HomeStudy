@@ -149,7 +149,10 @@ HS.talkMode = (function () {
     s.helpShown = kind;
     s.helpTrace = trace;
     s.ui.help.textContent = '';
-    s.ui.help.appendChild(HS.platform.micHelpNode({ test: false, words: kind === 'words', trace: trace }));
+    s.ui.help.appendChild(HS.platform.micHelpNode({
+      test: false, words: kind === 'words', trace: trace,
+      offSwitch: kind === 'words' ? function () { s.manual = true; } : null
+    }));
     s.ui.help.hidden = false;
   }
 

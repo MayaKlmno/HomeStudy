@@ -46,7 +46,7 @@ HS.notes = (function () {
 })();
 
 HS.audio = (function () {
-  var ctx = null, master = null;
+  var ctx = null, master = null, hushed = false;
 
   function ac() {
     if (!ctx) {
@@ -63,7 +63,7 @@ HS.audio = (function () {
 
   /** Layered sines with a struck envelope — reads as "piano-ish" without samples. */
   function note(nameOrMidi, dur, when, gain) {
-    if (!HS.storage.state.settings.sound) return;
+    if (!HS.storage.state.settings.sound || hushed) return;
     var c = ac(); if (!c) return;
     dur = dur || 0.9;
     when = (when || 0) + c.currentTime;
@@ -108,7 +108,7 @@ HS.audio = (function () {
 
   /** Short click for the metronome / rhythm exercises. */
   function click(accent, when) {
-    if (!HS.storage.state.settings.sound) return;
+    if (!HS.storage.state.settings.sound || hushed) return;
     var c = ac(); if (!c) return;
     when = (when || 0) + c.currentTime;
     var o = c.createOscillator(), g = c.createGain();
@@ -122,6 +122,30 @@ HS.audio = (function () {
   }
 
   function unlock() { ac(); }
+
+  /**
+   * Parks the sound output, and gives back a function that brings it round again.
+   *
+   * On Android a Web Audio output that is still running can starve the speech recogniser: the
+   * microphone opens and not so much as a sound event ever arrives, while the microphone itself
+   * is plainly fine. So while something is listening, this page stops playing — `after` leaves
+   * the go-ahead beep time to finish ringing first — and nothing new is played until it is back.
+   */
+  function hush(after) {
+    var released = false;
+    var timer = setTimeout(function () {
+      if (released) return;
+      hushed = true;
+      if (ctx && ctx.state === 'running' && ctx.suspend) { try { ctx.suspend(); } catch (e) {} }
+    }, after || 0);
+    return function () {
+      if (released) return;
+      released = true;
+      clearTimeout(timer);
+      hushed = false;
+      if (ctx && ctx.state === 'suspended' && ctx.resume) { try { ctx.resume(); } catch (e) {} }
+    };
+  }
 
   /* Little earcons for speaking practice, so you can follow it without looking at the screen:
      listening has started, your voice is being picked up, listening has stopped. */
@@ -140,5 +164,6 @@ HS.audio = (function () {
     seq.forEach(function (x) { note(x.note, x.dur, t, gain); t += x.dur * 0.75; });
   }
 
-  return { note: note, chord: chord, melody: melody, click: click, cue: cue, unlock: unlock };
+  return { note: note, chord: chord, melody: melody, click: click, cue: cue, unlock: unlock,
+           hush: hush };
 })();

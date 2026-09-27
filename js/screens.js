@@ -441,6 +441,12 @@ HS.screens = (function () {
         function () { return s.settings.sound; },
         function (v) { s.settings.sound = v; }),
 
+      toggleRow('Listening', HS.speech.canListen() || HS.speech.listeningOff()
+          ? 'Let the microphone grade your speaking. Off: you say the line and tap “I said it”.'
+          : HS.platform.browserName() + ' can’t turn speech into words, so this stays off.',
+        function () { return HS.speech.canListen(); },
+        function (v) { HS.speech.setListening(v); }),
+
       toggleRow('Speaking exercises', 'Say sentences out loud into the microphone',
         function () { return s.settings.speaking !== false; },
         function (v) { s.settings.speaking = v; s.settings.noSpeakUntil = 0; }),
@@ -490,7 +496,10 @@ HS.screens = (function () {
           helpFor = kind;
           helpTrace = trace;
           help.textContent = '';
-          help.appendChild(HS.platform.micHelpNode({ test: true, words: kind === 'words', trace: trace }));
+          help.appendChild(HS.platform.micHelpNode({
+            test: true, words: kind === 'words', trace: trace,
+            offSwitch: kind === 'words' ? function () { HS.app.render(); } : null
+          }));
         }
         if (!HS.speech.canListen()) showHelp({ words: true });
 

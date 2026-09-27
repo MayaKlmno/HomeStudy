@@ -386,11 +386,22 @@ HS.exercises = (function () {
 
     var manual = !HS.speech.canListen();
     if (manual) {
-      mic.hidden = true;
-      status.textContent = HS.platform.browserName() + ' can’t listen, so say it out loud yourself — then tap “I said it”.';
-      showHelp({ words: true });
+      goManual(HS.speech.listeningOff()
+        ? 'Listening is off on this ' + HS.platform.deviceName() + ' — say it out loud, then tap “I said it”.'
+        : HS.platform.browserName() + ' can’t listen, so say it out loud yourself — then tap “I said it”.');
+      /* Already switched off on purpose: no need to explain the microphone again. */
+      if (!HS.speech.listeningOff()) showHelp({ words: true });
     } else {
       said.hidden = true;
+    }
+
+    /** No grading from here on: say it yourself and carry on. */
+    function goManual(why) {
+      manual = true;
+      mic.hidden = true;
+      said.hidden = false;
+      status.className = 'speak-status';
+      status.textContent = why;
     }
 
     /* The steps for this exact phone, laptop or browser — shown only when needed, and led by the
@@ -404,7 +415,11 @@ HS.exercises = (function () {
       helpFor = kind;
       helpTrace = trace;
       helpBox.textContent = '';
-      helpBox.appendChild(HS.platform.micHelpNode({ test: true, words: kind === 'words', trace: trace }));
+      helpBox.appendChild(HS.platform.micHelpNode({
+        test: true, words: kind === 'words', trace: trace,
+        /* Offered only once the words are the problem: nothing else has worked by then. */
+        offSwitch: kind === 'words' ? function () { goManual('Say it out loud, then tap “I said it”.'); } : null
+      }));
     }
 
     function setListening(on) {

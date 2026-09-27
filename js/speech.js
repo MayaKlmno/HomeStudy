@@ -91,13 +91,35 @@ HS.speech = (function () {
 
   var Rec = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   var active = null;                  // the listen() in progress, so nothing else grabs the mic
+  var checking = null;                // a probe() in progress, for the same reason
 
-  function canListen() { return !!Rec; }
+  /* Where Chrome simply will not turn speech into words — it happens — listening can be switched
+     off for this device, and every speaking exercise falls back to saying it out loud yourself. */
+  function listeningOn() {
+    var st = settings();
+    return !st || st.listen !== false;
+  }
+  function canListen() { return !!Rec && listeningOn(); }
+  /** True where the browser could listen but it has been switched off here. */
+  function listeningOff() { return !!Rec && !listeningOn(); }
+  /** Switches listening on or off for this device, and remembers it. */
+  function setListening(on) {
+    var st = settings();
+    if (!st) return;
+    st.listen = !!on;
+    HS.storage.save();
+  }
 
   /** Ends any listening in progress. Anything that wants the microphone calls this first. */
   function stopListening() {
     var f = active;
     active = null;
+    if (f) { try { f(); } catch (e) {} }
+  }
+  /** Ends a microphone check in progress — it holds the microphone the recogniser needs. */
+  function stopChecking() {
+    var f = checking;
+    checking = null;
     if (f) { try { f(); } catch (e) {} }
   }
 
@@ -122,6 +144,10 @@ HS.speech = (function () {
             trace.lines.join(' · ')].join(' | ');
   }
 
+  function settings() {
+    return (HS.storage && HS.storage.state && HS.storage.state.settings) || null;
+  }
+
   /* Errors where trying again the same second is pointless. */
   var HOPELESS = { 'not-allowed': 1, 'service-not-allowed': 1, 'audio-capture': 1, 'unsupported': 1, 'offline': 1 };
 
@@ -144,9 +170,6 @@ HS.speech = (function () {
     if (!p || p.browser === 'safari') return 0;
     return p.os === 'android' ? 800 : 250;
   }
-  function settings() {
-    return (HS.storage && HS.storage.state && HS.storage.state.settings) || null;
-  }
   function warmup() {
     var st = settings();
     return Math.max(warmupFloor(), (st && st.micWarmup) || 0);
@@ -160,6 +183,12 @@ HS.speech = (function () {
     HS.storage.save();
   }
   var GO_ANYWAY = 1800;               // no news from the recogniser: go ahead regardless
+
+  /* Only Android has shown the recogniser going deaf while this page is playing sound, and the
+     cost is losing the "I can hear you" beep while it listens — so only Android pays it. */
+  function hushWhileListening() {
+    return !!(HS.platform && HS.platform.os === 'android');
+  }
 
   /**
    * Listens for one phrase. cb(err, alternatives, info):
@@ -185,13 +214,14 @@ HS.speech = (function () {
     var on = opts.on || function () {};
     var seen = { audio: false, sound: false, voice: false };
     var use = tag || lang;
-    if (!Rec) { cb('unsupported', [], seen); return function () {}; }
+    if (!Rec || !listeningOn()) { cb('unsupported', [], seen); return function () {}; }
     stop();
     stopListening();                  // two recognisers at once get nothing between them
+    stopChecking();                   // and a microphone check would hold the microphone itself
 
     var rec = null, finished = false, aborted = false, tries = 0, t0 = Date.now();
     var bar = pulse(opts.level);
-    var live = false, graceTimer = null, goAnyway = null;
+    var live = false, graceTimer = null, goAnyway = null, unhush = null;
     trace = { lines: [], err: null, results: 0, lang: use, plain: preferPlain, online: !offline(),
               tries: 0, warmup: warmup() };
 
@@ -202,6 +232,7 @@ HS.speech = (function () {
       finished = true;
       clearTimeout(graceTimer);
       clearTimeout(goAnyway);
+      if (unhush) { unhush(); unhush = null; }
       if (active === halt) active = null;
       bar.stop();
       trace.err = err;
@@ -246,7 +277,11 @@ HS.speech = (function () {
       clearTimeout(goAnyway);
       note('go');
       bar.to(0.12);
-      on(began());
+      on(began());                    // the caller beeps here — then the page falls silent
+      if (hushWhileListening() && HS.audio && HS.audio.hush && !unhush) {
+        note('parking the sound output');
+        unhush = HS.audio.hush(500);  // long enough for that beep to finish ringing
+      }
     }
     /* The microphone is open. Wait out the gap behind it, then give the go-ahead. */
     function armGo() {
@@ -367,6 +402,7 @@ HS.speech = (function () {
     opts = opts || {};
     var ms = opts.ms || 2500, onLevel = opts.level || function () {};
     stopListening();                  // the whole point is to have the microphone to ourselves
+    stopChecking();
     var md = navigator.mediaDevices;
     if (!md || !md.getUserMedia) return Promise.resolve({ ok: false, peak: 0, err: 'unsupported' });
     return md.getUserMedia({ audio: true }).then(function (st) {
@@ -378,13 +414,18 @@ HS.speech = (function () {
         node.fftSize = 512;
         ctx.createMediaStreamSource(st).connect(node);
         var buf = new Uint8Array(node.fftSize);
+        var done = false;
         function finish() {
+          if (done) return;
+          done = true;
+          if (checking === finish) checking = null;
           clearTimeout(timer);
           try { ctx.close(); } catch (e) {}
           st.getTracks().forEach(function (t) { t.stop(); });
           onLevel(0);
           resolve({ ok: peak > 0.08, peak: peak, err: null });
         }
+        checking = finish;             // so a listen can take the microphone back
         (function tick() {
           node.getByteTimeDomainData(buf);
           var top = 0;
@@ -454,5 +495,6 @@ HS.speech = (function () {
   return { say: say, stop: stop, unlock: unlock, setLang: setLang, available: available,
            languageName: languageName, canListen: canListen, listen: listen,
            stopListening: stopListening, probe: probe, lastTrace: lastTrace,
+           listeningOff: listeningOff, setListening: setListening,
            closeness: closeness, grade: grade };
 })();
